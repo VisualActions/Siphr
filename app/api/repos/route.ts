@@ -40,12 +40,13 @@ export async function POST(req: Request) {
   if (!(await getUser(owner))) {
     return NextResponse.json({ error: "unknown owner" }, { status: 404 });
   }
-  if (!(owner in wrappedKeys)) {
+  if (visibility === "private" && !(owner in wrappedKeys)) {
     return NextResponse.json(
-      { error: "owner must have a wrapped repo key" },
+      { error: "private repos require a wrapped key for the owner" },
       { status: 400 }
     );
   }
+  // Public repos: no key needed. Stored as plaintext, readable by anyone.
 
   const id = crypto.randomUUID();
   try {

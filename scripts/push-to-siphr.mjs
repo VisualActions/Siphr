@@ -22,7 +22,7 @@ const BASE = process.env.SIPHR_URL ?? "http://localhost:3000";
 const USERNAME = process.env.SIPHR_USER ?? "siphr";
 const PASSPHRASE = process.env.SIPHR_PASS ?? "siphr-bootstrap-passphrase-v0";
 const REPO_NAME = process.env.SIPHR_REPO ?? "siphr";
-const VISIBILITY = "public";
+const VISIBILITY = process.env.SIPHR_VISIBILITY === "private" ? "private" : "public";
 const GIT_DIR = path.resolve(".git");
 const STATE_FILE = path.resolve(".siphr-push.json");
 
@@ -214,39 +214,49 @@ async function main() {
 
   let state = await loadState();
   let identity, repoKey, repoId;
+  const isPrivate = VISIBILITY === "private";
 
-  if (state) {
+  if (state && state.repoName === REPO_NAME && state.visibility === VISIBILITY) {
     identity = state.identity;
-    repoKey = fromB64url(state.repoKey);
+    repoKey = state.repoKey ? fromB64url(state.repoKey) : null;
     repoId = state.repoId;
     console.log(`  reusing existing identity + repo (${repoId})`);
   } else {
     console.log("  generating identity...");
-    identity = await generateIdentity();
+    identity = state?.identity ?? (await generateIdentity());
     const fp = await fingerprint(identity.publicKeyJwk);
     const encryptedIdentity = await encryptIdentity(identity, PASSPHRASE);
 
-    console.log(`  signing up as @${USERNAME} (fp ${fp})...`);
-    await fetchJson(BASE + "/api/users", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        username: USERNAME,
-        publicKeyJwk: identity.publicKeyJwk,
-        encryptedIdentity,
-        fingerprint: fp,
-      }),
-    }).catch(async (err) => {
-      if (String(err).includes("409")) {
-        console.log("  user already exists, continuing");
-      } else throw err;
-    });
+    if (!state?.identity) {
+      console.log(`  signing up as @${USERNAME} (fp ${fp})...`);
+      await fetchJson(BASE + "/api/users", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          username: USERNAME,
+          publicKeyJwk: identity.publicKeyJwk,
+          encryptedIdentity,
+          fingerprint: fp,
+        }),
+      }).catch(async (err) => {
+        if (String(err).includes("409")) {
+          console.log("  user already exists, continuing");
+        } else throw err;
+      });
+    }
 
-    console.log("  generating repo key + wrapping for owner...");
-    repoKey = crypto.getRandomValues(new Uint8Array(32));
-    const wrapped = await wrapRepoKey(repoKey, identity.publicKeyJwk);
+    let wrappedKeys = {};
+    if (isPrivate) {
+      console.log("  generating repo key + wrapping for owner...");
+      repoKey = crypto.getRandomValues(new Uint8Array(32));
+      const wrapped = await wrapRepoKey(repoKey, identity.publicKeyJwk);
+      wrappedKeys = { [USERNAME]: wrapped };
+    } else {
+      console.log("  public repo — no encryption, no wrapped key");
+      repoKey = null;
+    }
 
-    console.log("  creating repo...");
+    console.log(`  creating ${VISIBILITY} repo...`);
     const created = await fetchJson(BASE + "/api/repos", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -254,44 +264,52 @@ async function main() {
         owner: USERNAME,
         name: REPO_NAME,
         visibility: VISIBILITY,
-        wrappedKeys: { [USERNAME]: wrapped },
+        wrappedKeys,
       }),
     });
     repoId = created.id;
 
     state = {
       identity,
-      repoKey: b64url(repoKey),
+      repoKey: repoKey ? b64url(repoKey) : null,
       repoId,
+      repoName: REPO_NAME,
+      visibility: VISIBILITY,
       createdAt: new Date().toISOString(),
     };
     await saveState(state);
   }
 
   console.log(`  repo id: ${repoId}`);
-  console.log("  encrypting + uploading objects...");
+  console.log(
+    isPrivate
+      ? "  encrypting + uploading objects..."
+      : "  uploading plaintext objects..."
+  );
 
   const objectsDir = path.join(GIT_DIR, "objects");
   let count = 0;
   let bytes = 0;
   for await (const { oid, path: p } of walkObjects(objectsDir)) {
     const plain = await readFile(p);
-    const ct = await encryptObject(repoKey, plain);
+    const payload = isPrivate && repoKey ? await encryptObject(repoKey, plain) : plain;
     const res = await fetch(`${BASE}/api/repos/${repoId}/objects/${oid}`, {
       method: "PUT",
       headers: { "content-type": "application/octet-stream" },
-      body: ct,
+      body: payload,
     });
     if (!res.ok) {
       throw new Error(`PUT ${oid} -> ${res.status}: ${await res.text()}`);
     }
     count++;
-    bytes += ct.byteLength;
+    bytes += payload.byteLength ?? payload.length;
     if (count % 25 === 0) process.stdout.write(`    ${count} objects...\r`);
   }
 
-  console.log(`\n  pushed ${count} encrypted objects (${(bytes / 1024).toFixed(1)} KB ciphertext)`);
-  console.log(`  visible at: ${BASE}/r/${USERNAME}/${REPO_NAME}`);
+  console.log(
+    `\n  pushed ${count} ${isPrivate ? "encrypted" : "plaintext"} objects (${(bytes / 1024).toFixed(1)} KB)`
+  );
+  console.log(`  visible at: ${BASE}/${USERNAME}/${REPO_NAME}`);
 }
 
 main().catch((err) => {

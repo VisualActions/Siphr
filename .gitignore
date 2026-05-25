@@ -4,5 +4,9 @@ node_modules
 .vercel
 *.tsbuildinfo
 next-env.d.ts.bak
-data/repos
-data/users.json
+
+# Server state (local fs-backed store)
+data/
+
+# Bootstrap push state — contains private key + repo key plaintext
+.siphr-push.json

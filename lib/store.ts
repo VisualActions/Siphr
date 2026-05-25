@@ -17,7 +17,27 @@ export type StoredUser = {
   /** Encrypted identity blob — server stores it as opaque JSON. */
   encryptedIdentity: unknown;
   createdAt: string;
+  /** Verified by Siphr (e.g. Microsoft official account). */
+  verified?: boolean;
+  /** Optional canonical display name shown next to the badge, e.g. "Microsoft". */
+  verifiedAs?: string;
+  /** ISO date when verification was granted. */
+  verifiedAt?: string;
+  /** Org / individual / bot — affects badge tone. */
+  verifiedKind?: "org" | "individual" | "bot";
 };
+
+export async function setUserVerification(
+  username: string,
+  v: Pick<StoredUser, "verified" | "verifiedAs" | "verifiedAt" | "verifiedKind">
+): Promise<StoredUser> {
+  const users = await listUsers();
+  const i = users.findIndex((u) => u.username === username);
+  if (i === -1) throw new Error("no such user");
+  users[i] = { ...users[i], ...v };
+  await writeJson(usersFile(), users);
+  return users[i];
+}
 
 export type StoredRepo = {
   id: string;
