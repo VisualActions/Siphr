@@ -12,3 +12,7 @@ data/
 .siphr-push.json
 
 .vercel
+
+# Design handoff extraction artifacts
+design-out/
+scripts/extract-design.mjs

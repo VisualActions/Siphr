@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { FingerprintSigil } from "./Primitives";
 
 type Entry = {
   mode: string;
@@ -53,28 +54,36 @@ export default function FileBrowser({
 
   if (error) {
     return (
-      <div className="box-row text-sm" style={{ color: "#cf222e" }}>
+      <div style={{ padding: "12px 18px", fontSize: 13, color: "var(--rust)", fontFamily: "var(--mono)" }}>
         Could not load directory: {error}
       </div>
     );
   }
   if (!data) {
-    return <div className="box-row text-sm text-[color:var(--color-fg-muted)]">Loading…</div>;
+    return <div style={{ padding: "12px 18px", fontSize: 13, color: "var(--muted)", fontFamily: "var(--mono)" }}>loading tree…</div>;
   }
 
   const subject = data.commit.message.split("\n")[0];
+  const authorName = data.commit.author?.name ?? owner;
 
   return (
     <>
-      <div className="box-row flex items-center gap-3" style={{ background: "var(--color-canvas-subtle)" }}>
-        <Avatar name={data.commit.author?.name ?? owner} />
-        <span className="font-semibold text-sm">{data.commit.author?.name ?? owner}</span>
-        <span className="text-sm text-[color:var(--color-fg-muted)] truncate flex-1">{subject}</span>
-        <span className="text-xs font-mono text-[color:var(--color-fg-muted)]" title={data.commit.oid}>
+      <div style={{
+        padding: "10px 14px", borderBottom: "1px solid var(--line)",
+        display: "flex", alignItems: "center", gap: 12,
+        background: "var(--paper-2)", fontSize: 13,
+      }}>
+        <FingerprintSigil seed={`commit ${data.commit.oid}`} size={22} />
+        <strong>{authorName}</strong>
+        <span style={{
+          color: "var(--ink-2)", flex: 1, overflow: "hidden",
+          textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>{subject}</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }} title={data.commit.oid}>
           {data.commit.oid.slice(0, 7)}
         </span>
         {data.commit.author?.when && (
-          <span className="text-xs text-[color:var(--color-fg-muted)]">
+          <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>
             {timeAgo(data.commit.author.when * 1000)}
           </span>
         )}
@@ -88,7 +97,7 @@ export default function FileBrowser({
           type="tree"
           entryName=".."
           targetPath={parentPath(path)}
-          icon="↩"
+          oid=""
         />
       )}
 
@@ -101,7 +110,7 @@ export default function FileBrowser({
           type={e.type}
           entryName={e.name}
           targetPath={path ? `${path}/${e.name}` : e.name}
-          icon={e.type === "tree" ? "📁" : iconForFile(e.name)}
+          oid={e.oid}
         />
       ))}
     </>
@@ -109,21 +118,11 @@ export default function FileBrowser({
 }
 
 function Row({
-  owner,
-  name,
-  branch,
-  type,
-  entryName,
-  targetPath,
-  icon,
+  owner, name, branch, type, entryName, targetPath, oid,
 }: {
-  owner: string;
-  name: string;
-  branch: string;
+  owner: string; name: string; branch: string;
   type: "tree" | "blob";
-  entryName: string;
-  targetPath: string;
-  icon: string;
+  entryName: string; targetPath: string; oid: string;
 }) {
   const href =
     type === "tree"
@@ -132,35 +131,29 @@ function Row({
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 px-4 py-2 border-t border-[color:var(--color-border-muted)] hover:bg-[color:var(--color-canvas-subtle)] no-underline text-[color:var(--color-fg)]"
+      style={{
+        display: "grid",
+        gridTemplateColumns: "auto 1fr auto",
+        gap: 14, alignItems: "center",
+        padding: "10px 14px",
+        borderTop: "1px solid var(--line-2)",
+        fontSize: 13, color: "var(--ink)",
+      }}
     >
-      <span className="w-4 text-center" aria-hidden>{icon}</span>
-      <span className="text-sm">{entryName}</span>
+      <span style={{ color: type === "tree" ? "var(--copper)" : "var(--muted)", width: 16, textAlign: "center" }}>
+        {entryName === ".." ? "↩" : type === "tree" ? "📁" : "·"}
+      </span>
+      <span style={{ fontWeight: type === "tree" ? 500 : 400 }}>{entryName}</span>
+      {oid && (
+        <span style={{
+          fontFamily: "var(--mono)", fontSize: 10,
+          color: "var(--muted-2)", letterSpacing: "0.03em",
+        }}>
+          oid {oid.slice(0, 7)}
+        </span>
+      )}
     </Link>
   );
-}
-
-function Avatar({ name }: { name: string }) {
-  return (
-    <span
-      className="inline-flex items-center justify-center rounded-full font-semibold"
-      style={{ width: 24, height: 24, background: "#0969da", color: "#fff", fontSize: 12 }}
-    >
-      {(name[0] ?? "?").toUpperCase()}
-    </span>
-  );
-}
-
-function iconForFile(name: string): string {
-  const n = name.toLowerCase();
-  if (n === "readme.md") return "📖";
-  if (n === "license" || n === "license.md") return "📜";
-  if (n.endsWith(".md")) return "📝";
-  if (n.endsWith(".json")) return "🧾";
-  if (n.endsWith(".ts") || n.endsWith(".tsx") || n.endsWith(".js") || n.endsWith(".jsx")) return "📄";
-  if (n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".svg") || n.endsWith(".gif")) return "🖼";
-  if (n.startsWith(".")) return "⚙";
-  return "📄";
 }
 
 function parentPath(p: string): string {

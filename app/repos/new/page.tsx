@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import TopNav from "@/components/TopNav";
+import { FingerprintSigil, LockGlyph } from "@/components/Primitives";
 
 export default function NewRepoPage() {
   const router = useRouter();
@@ -38,7 +39,7 @@ export default function NewRepoPage() {
       const res = await fetch("/api/repos", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ owner: user, name, visibility, wrappedKeys }),
+        body: JSON.stringify({ owner: user, name, visibility, wrappedKeys, description: description || null }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error ?? "Server error");
@@ -55,71 +56,87 @@ export default function NewRepoPage() {
   return (
     <>
       <TopNav />
-      <main className="mx-auto max-w-[768px] px-4 py-8">
-        <div className="border-b pb-4 mb-6">
-          <h1 className="text-2xl font-semibold">Create a new repository</h1>
-          <p className="text-sm text-[color:var(--color-fg-muted)] mt-1">
-            A fresh 256-bit repo key will be generated in this browser and wrapped to your public key.
-          </p>
-        </div>
-        <form onSubmit={onSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-semibold mb-1">Owner / Repository name *</label>
-            <div className="flex items-center gap-2">
-              <div className="btn btn-sm" style={{ pointerEvents: "none" }}>
+      <main style={{ maxWidth: 760, margin: "0 auto", padding: "48px 6vw" }}>
+        <div className="eyebrow" style={{ marginBottom: 12 }}>↳ new repository</div>
+        <h1 className="serif" style={{ fontSize: 48, letterSpacing: "-0.02em" }}>
+          Generate a <em style={{ color: "var(--copper)" }}>repo key</em> and a repository.
+        </h1>
+        <p style={{ marginTop: 14, fontSize: 15, color: "var(--ink-2)", maxWidth: 560 }}>
+          For private repos, a fresh 256-bit AES key is generated in this browser and wrapped to your public key.
+          The server only ever sees ciphertext.
+        </p>
+
+        <form onSubmit={onSubmit} style={{ marginTop: 36 }}>
+          <div className="card" style={{ padding: 22, marginBottom: 18 }}>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>owner / repository</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 8,
+                padding: "8px 14px", border: "1px solid var(--line)",
+                borderRadius: 6, fontFamily: "var(--mono)", fontSize: 13,
+                background: "var(--paper-2)",
+              }}>
+                {user && <FingerprintSigil seed={`${user}@siphr`} size={16} />}
                 {user ?? "you"}
-              </div>
-              <span className="text-xl text-[color:var(--color-fg-muted)]">/</span>
+              </span>
+              <span style={{ fontSize: 22, color: "var(--muted-2)" }}>/</span>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="hello-world"
-                className="input font-mono"
-                style={{ maxWidth: 300 }}
+                className="input mono"
+                style={{ maxWidth: 340 }}
               />
             </div>
-            <div className="text-sm text-[color:var(--color-fg-muted)] mt-2">
-              Great repository names are short and memorable.
+            <div style={{ marginTop: 8, fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>
+              ↳ short, memorable, mostly lowercase
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-semibold mb-1">Description <span className="text-[color:var(--color-fg-muted)] font-normal">(optional)</span></label>
+          <div className="card" style={{ padding: 22, marginBottom: 18 }}>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>description (optional)</div>
             <input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="input"
-              placeholder="A short description"
+              placeholder="a short description"
             />
-            <div className="text-xs text-[color:var(--color-fg-muted)] mt-1">
-              Descriptions are encrypted with the repo key for private repos.
+            <div style={{ marginTop: 8, fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>
+              ↳ descriptions for private repos are encrypted at rest
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 18 }}>
             <VisibilityOption
               selected={visibility === "private"}
               onClick={() => setVisibility("private")}
-              icon="🔒"
-              title="Private — end-to-end encrypted"
-              body="A fresh 256-bit repo key is generated in this browser and wrapped to your public key. Siphr stores ciphertext and cannot read this repository."
+              title="private — end-to-end encrypted"
+              body="A fresh 256-bit AES key is generated in this browser and wrapped to your public key. Siphr stores ciphertext only."
+              tag="aes-256-gcm · pbkdf2 · ecdh wrap"
             />
             <VisibilityOption
               selected={visibility === "public"}
               onClick={() => setVisibility("public")}
-              icon="🌍"
-              title="Public"
-              body="Stored as plaintext, like a normal forge. Anyone can read it. Siphr still won't track who views or analytics what."
+              title="public"
+              body="Stored as plaintext, like any forge. Anyone can read it. Siphr still won't track who views."
+              tag="plaintext storage"
+              variant="public"
             />
           </div>
 
-          {error && <div className="text-sm" style={{ color: "#cf222e" }}>{error}</div>}
+          {error && (
+            <div style={{
+              padding: "10px 12px", marginBottom: 14, borderRadius: 6,
+              background: "rgba(138,42,31,0.08)", color: "var(--rust)",
+              fontSize: 13, fontFamily: "var(--mono)",
+            }}>{error}</div>
+          )}
 
-          <div className="flex items-center gap-3 pt-2 border-t">
-            <button type="submit" disabled={busy || !name || !user} className="btn btn-primary">
-              {busy ? "Creating repository…" : "Create repository"}
+          <div style={{ display: "flex", gap: 12, alignItems: "center", paddingTop: 16, borderTop: "1px solid var(--line)" }}>
+            <button type="submit" disabled={busy || !name || !user} className="btn copper">
+              {busy ? "creating repository…" : "create repository"}
             </button>
-            <Link href="/dashboard" className="btn">Cancel</Link>
+            <Link href="/dashboard" className="btn ghost">cancel</Link>
           </div>
         </form>
       </main>
@@ -128,39 +145,51 @@ export default function NewRepoPage() {
 }
 
 function VisibilityOption({
-  selected,
-  onClick,
-  icon,
-  title,
-  body,
+  selected, onClick, title, body, tag, variant = "private",
 }: {
   selected: boolean;
   onClick: () => void;
-  icon: string;
   title: string;
   body: string;
+  tag: string;
+  variant?: "private" | "public";
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="w-full text-left p-3 rounded-md flex items-start gap-3"
       style={{
-        border: selected ? "1px solid var(--color-accent)" : "1px solid var(--color-border-muted)",
-        background: selected ? "var(--color-accent-subtle)" : "var(--color-canvas)",
+        width: "100%", textAlign: "left",
+        padding: "16px 18px", borderRadius: 6,
+        display: "flex", gap: 16, alignItems: "flex-start",
+        border: selected ? "1px solid var(--copper)" : "1px solid var(--line)",
+        background: selected ? "var(--copper-bg)" : "#fffdf7",
+        cursor: "pointer", transition: "border 0.12s, background 0.12s",
       }}
     >
-      <div className="text-xl">{icon}</div>
-      <div className="flex-1">
-        <div className="font-semibold text-sm">{title}</div>
-        <div className="text-sm text-[color:var(--color-fg-muted)]">{body}</div>
+      <div style={{
+        marginTop: 2, color: variant === "private" ? "#7a5a16" : "var(--moss)",
+      }}>
+        {variant === "private" ? <LockGlyph size={16} /> : <GlobeGlyph />}
       </div>
-      <input
-        type="radio"
-        checked={selected}
-        readOnly
-        className="mt-1.5"
-      />
+      <div style={{ flex: 1 }}>
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{title}</div>
+        <div style={{ fontSize: 13, color: "var(--ink-2)", lineHeight: 1.55 }}>{body}</div>
+        <div style={{
+          marginTop: 8, fontFamily: "var(--mono)", fontSize: 11,
+          color: "var(--muted)",
+        }}>↳ {tag}</div>
+      </div>
+      <input type="radio" checked={selected} readOnly style={{ marginTop: 6 }} />
     </button>
+  );
+}
+
+function GlobeGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+      <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm6.5 8a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z" />
+      <path d="M0 8h16M8 0v16" stroke="currentColor" strokeWidth="0.8" fill="none" />
+    </svg>
   );
 }

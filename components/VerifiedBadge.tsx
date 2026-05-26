@@ -70,12 +70,14 @@ export default function VerifiedBadge({
 
   if (!state?.verified) return null;
 
+  // Tones match the Siphr palette: copper for orgs, moss for individuals,
+  // amber for bots — anti-corporate, never bootstrap blue/green.
   const color =
     state.verifiedKind === "bot"
-      ? "#8250df"
+      ? "#b88a24"
       : state.verifiedKind === "org"
-      ? "#0969da"
-      : "#1f883d";
+      ? "#b25927"
+      : "#1f5c3a";
 
   const title = state.verifiedAs
     ? `Verified ${state.verifiedKind ?? "account"} — ${state.verifiedAs}`
@@ -104,7 +106,7 @@ export default function VerifiedBadge({
         />
       </svg>
       {showName && state.verifiedAs && (
-        <span className="text-xs text-[color:var(--color-fg-muted)]">
+        <span style={{ fontSize: 12, color: "var(--muted)", fontFamily: "var(--mono)" }}>
           {state.verifiedAs}
         </span>
       )}

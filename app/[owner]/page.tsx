@@ -4,6 +4,7 @@ import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import TopNav from "@/components/TopNav";
 import VerifiedBadge from "@/components/VerifiedBadge";
+import { FingerprintSigil, Pill } from "@/components/Primitives";
 
 type User = {
   username: string;
@@ -52,48 +53,62 @@ export default function ProfilePage({
     return (
       <>
         <TopNav />
-        <main className="mx-auto max-w-[1012px] px-4 py-16 text-center">
-          <h1 className="text-2xl font-semibold mb-2">404</h1>
-          <p className="text-[color:var(--color-fg-muted)]">No such user.</p>
+        <main style={{ maxWidth: 1012, margin: "0 auto", padding: "64px 6vw", textAlign: "center" }}>
+          <h1 className="serif" style={{ fontSize: 80, color: "var(--copper)" }}>404</h1>
+          <p style={{ color: "var(--muted)", fontFamily: "var(--mono)" }}>no such user.</p>
         </main>
       </>
     );
   }
 
+  const seed = user ? `${owner}@siphr ${user.fingerprint}` : `${owner}@siphr`;
+  const fpFormatted = user?.fingerprint?.replace(/(.{4})/g, "$1 ").trim();
+
   return (
     <>
       <TopNav />
-      <main className="mx-auto max-w-[1280px] px-4 py-8 grid md:grid-cols-[296px_1fr] gap-8">
+      <main style={{
+        maxWidth: 1280, margin: "0 auto",
+        padding: "40px 6vw 64px",
+        display: "grid", gridTemplateColumns: "320px 1fr", gap: 40,
+      }}>
         <aside>
-          <div
-            className="rounded-full flex items-center justify-center font-bold mb-4"
-            style={{ width: 260, height: 260, background: "#0969da", color: "#fff", fontSize: 100 }}
-          >
-            {owner[0]?.toUpperCase()}
+          <div style={{ marginBottom: 18 }}>
+            <FingerprintSigil seed={seed} size={260} />
           </div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
+          <h1 className="serif" style={{
+            fontSize: 36, letterSpacing: "-0.02em",
+            display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+          }}>
             {user?.verifiedAs || owner}
             <VerifiedBadge
               username={owner}
               verified={user?.verified}
               verifiedAs={user?.verifiedAs}
               verifiedKind={user?.verifiedKind}
-              size={20}
+              size={22}
             />
           </h1>
-          <p className="text-lg text-[color:var(--color-fg-muted)]">@{owner}</p>
+          <p style={{ fontSize: 16, color: "var(--muted)", fontFamily: "var(--mono)" }}>@{owner}</p>
           {user && (
             <>
-              <p className="text-sm text-[color:var(--color-fg-muted)] mt-4">
-                Joined {new Date(user.createdAt).toLocaleDateString()}
+              <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 14, fontFamily: "var(--mono)" }}>
+                ↳ joined {new Date(user.createdAt).toLocaleDateString()}
               </p>
-              <div className="mt-6">
-                <div className="text-xs text-[color:var(--color-fg-muted)] mb-1">Public key fingerprint</div>
-                <div className="font-mono text-xs p-2 rounded" style={{ background: "var(--color-canvas-subtle)" }}>
-                  {user.fingerprint}
+              <div style={{ marginTop: 22 }}>
+                <div className="eyebrow" style={{ marginBottom: 6 }}>↳ public key fingerprint</div>
+                <div style={{
+                  fontFamily: "var(--mono)", fontSize: 12, padding: "10px 12px",
+                  borderRadius: 6, background: "#0f0d0a", color: "#e8d9b8",
+                  border: "1px solid #2a2520", letterSpacing: "0.04em",
+                }}>
+                  {fpFormatted}
                 </div>
-                <div className="text-xs text-[color:var(--color-fg-muted)] mt-2">
-                  Verify this fingerprint out-of-band before adding {owner} as a collaborator on a private repo.
+                <div style={{
+                  marginTop: 8, fontSize: 11, fontFamily: "var(--mono)",
+                  color: "var(--muted)", lineHeight: 1.6,
+                }}>
+                  ↳ verify this fingerprint out-of-band before adding {owner} as a collaborator on a private repo.
                 </div>
               </div>
             </>
@@ -101,28 +116,37 @@ export default function ProfilePage({
         </aside>
 
         <section>
-          <h2 className="font-semibold mb-3">
-            Repositories <span className="badge ml-1">{repos.length}</span>
-          </h2>
-          <div className="box">
+          <div className="eyebrow" style={{ marginBottom: 12, display: "flex", justifyContent: "space-between" }}>
+            <span>↳ repositories · {repos.length}</span>
+          </div>
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
             {repos.length === 0 ? (
-              <div className="box-row text-sm text-[color:var(--color-fg-muted)]">
-                No public repositories.
+              <div style={{ padding: "22px 18px", fontFamily: "var(--mono)", fontSize: 12, color: "var(--muted)" }}>
+                no public repositories.
               </div>
             ) : (
-              repos.map((r) => (
-                <div key={r.id} className="box-row">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Link href={`/${r.owner}/${r.name}`} className="font-semibold">
-                      {r.name}
-                    </Link>
-                    <span className={`badge ${r.visibility === "private" ? "badge-private" : ""}`}>
-                      {r.visibility}
-                    </span>
+              repos.map((r, i) => (
+                <div
+                  key={r.id}
+                  style={{
+                    padding: "14px 18px",
+                    borderBottom: i === repos.length - 1 ? "none" : "1px solid var(--line-2)",
+                    display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 14, alignItems: "center",
+                  }}
+                >
+                  <FingerprintSigil seed={`${r.owner}/${r.name} ${r.id.slice(0, 6)}`} size={28} />
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Link href={`/${r.owner}/${r.name}`} style={{ fontWeight: 600, fontSize: 14 }}>{r.name}</Link>
+                      <Pill variant={r.visibility === "private" ? "encrypted" : "public"}>
+                        {r.visibility === "private" ? "e2ee" : "public"}
+                      </Pill>
+                    </div>
+                    <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                      ↳ updated {new Date(r.createdAt).toLocaleDateString()}
+                    </div>
                   </div>
-                  <div className="text-xs text-[color:var(--color-fg-muted)]">
-                    Updated {new Date(r.createdAt).toLocaleDateString()}
-                  </div>
+                  <Link href={`/${r.owner}/${r.name}`} className="btn ghost xs">view →</Link>
                 </div>
               ))
             )}

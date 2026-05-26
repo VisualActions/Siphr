@@ -42,68 +42,71 @@ export default function FileViewer({
 
   if (error) {
     return (
-      <div className="box-row text-sm" style={{ color: "#cf222e" }}>
+      <div style={{ padding: "12px 18px", fontSize: 13, color: "var(--rust)", fontFamily: "var(--mono)" }}>
         Could not load file: {error}
       </div>
     );
   }
   if (!data) {
-    return <div className="box-row text-sm text-[color:var(--color-fg-muted)]">Loading…</div>;
+    return <div style={{ padding: "12px 18px", fontSize: 13, color: "var(--muted)", fontFamily: "var(--mono)" }}>loading…</div>;
   }
 
   const lines = data.content?.split("\n") ?? [];
 
   return (
-    <div className="box">
-      <div
-        className="box-row flex items-center justify-between gap-3"
-        style={{ background: "var(--color-canvas-subtle)" }}
-      >
-        <div className="text-sm text-[color:var(--color-fg-muted)]">
+    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      <div style={{
+        padding: "10px 14px", display: "flex",
+        alignItems: "center", justifyContent: "space-between",
+        gap: 12, background: "var(--paper-2)",
+        borderBottom: "1px solid var(--line)",
+        fontSize: 12, fontFamily: "var(--mono)", color: "var(--muted)",
+      }}>
+        <div>
           {lines.length} {lines.length === 1 ? "line" : "lines"}
-          <span className="mx-2">·</span>
+          <span style={{ margin: "0 8px" }}>·</span>
           {(data.size / 1024).toFixed(1)} KB
           {data.language && (
             <>
-              <span className="mx-2">·</span>
-              <span className="font-mono">{data.language}</span>
+              <span style={{ margin: "0 8px" }}>·</span>
+              <span>{data.language}</span>
             </>
           )}
         </div>
         <a
           href={`/api/repos/by-name/${owner}/${name}/blob?ref=${encodeURIComponent(branch)}&path=${encodeURIComponent(path)}`}
-          className="text-xs"
+          style={{ color: "var(--copper)" }}
           target="_blank"
           rel="noreferrer"
         >
-          Raw
+          raw ↗
         </a>
       </div>
       {data.binary ? (
-        <div className="box-row text-sm text-[color:var(--color-fg-muted)]">
-          Binary file — {data.size} bytes. Use raw download.
+        <div style={{ padding: "20px 18px", fontSize: 13, color: "var(--muted)", fontFamily: "var(--mono)" }}>
+          binary file — {data.size} bytes. use raw download.
         </div>
       ) : (
-        <pre
-          className="overflow-auto text-xs leading-5 font-mono"
-          style={{ margin: 0 }}
-        >
+        <pre style={{ overflow: "auto", margin: 0, fontFamily: "var(--mono)", fontSize: 12, lineHeight: 1.55 }}>
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
             <tbody>
               {lines.map((line, i) => (
                 <tr key={i}>
                   <td
-                    className="select-none text-[color:var(--color-fg-subtle)] text-right pr-4 pl-3"
                     style={{
-                      borderRight: "1px solid var(--color-border-muted)",
+                      userSelect: "none",
+                      color: "var(--muted-2)",
+                      textAlign: "right",
+                      padding: "0 12px 0 14px",
+                      borderRight: "1px solid var(--line-2)",
                       width: 1,
                       whiteSpace: "nowrap",
                     }}
                   >
                     {i + 1}
                   </td>
-                  <td className="pl-3 pr-3" style={{ whiteSpace: "pre" }}>
-                    {line || " "}
+                  <td style={{ padding: "0 14px", whiteSpace: "pre", color: "var(--ink)" }}>
+                    {line || " "}
                   </td>
                 </tr>
               ))}

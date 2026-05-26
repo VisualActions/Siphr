@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import TopNav from "@/components/TopNav";
+import { FingerprintSigil, Pill, Dot } from "@/components/Primitives";
 
 type Repo = {
   id: string;
@@ -14,13 +15,17 @@ type Repo = {
 
 export default function Dashboard() {
   const [user, setUser] = useState<string | null>(null);
+  const [fingerprint, setFingerprint] = useState<string | null>(null);
   const [repos, setRepos] = useState<Repo[]>([]);
-  const [filter, setFilter] = useState("");
 
   useEffect(() => {
     const u = localStorage.getItem("siphr:current_user");
     setUser(u);
     if (u) {
+      fetch(`/api/users/${encodeURIComponent(u)}`)
+        .then((r) => r.json())
+        .then((j) => setFingerprint(j?.fingerprint ?? null))
+        .catch(() => {});
       fetch(`/api/repos?user=${encodeURIComponent(u)}`)
         .then((r) => r.json())
         .then((j) => setRepos(j.repos ?? []))
@@ -32,111 +37,173 @@ export default function Dashboard() {
     return (
       <>
         <TopNav />
-        <main className="mx-auto max-w-[1012px] px-4 py-16">
-          <p className="text-[color:var(--color-fg-muted)]">
-            Not signed in. <Link href="/signin">Sign in</Link>.
+        <main style={{ maxWidth: 1012, margin: "0 auto", padding: "64px 6vw" }}>
+          <p className="serif" style={{ fontSize: 28 }}>
+            Not signed in. <Link href="/signin" style={{ color: "var(--copper)" }}>sign in →</Link>
           </p>
         </main>
       </>
     );
   }
 
-  const filtered = repos.filter((r) =>
-    r.name.toLowerCase().includes(filter.toLowerCase())
-  );
+  const seed = `${user}@siphr ${fingerprint ?? "pending"}`;
+  const fpShort = fingerprint ? formatFp(fingerprint).slice(0, 19) : "pending…";
+  const ciphertextRepos = repos.filter((r) => r.visibility === "private").length;
+  const today = new Date().toLocaleDateString("en-GB", {
+    weekday: "long", day: "numeric", month: "long",
+  });
 
   return (
     <>
       <TopNav />
-      <main className="mx-auto max-w-[1280px] grid md:grid-cols-[296px_1fr] gap-6 px-4 py-6">
+      <main style={{
+        maxWidth: 1280, margin: "0 auto",
+        padding: "32px 6vw 64px",
+        display: "grid", gridTemplateColumns: "300px 1fr", gap: 32,
+      }}>
+        {/* SIDEBAR -------------------------------------------------- */}
         <aside>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold">Top repositories</h2>
-            <Link href="/repos/new" className="btn btn-sm btn-primary">
-              <span className="text-[14px] leading-none">+</span> New
-            </Link>
-          </div>
-          <input
-            placeholder="Find a repository…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="input mb-3"
-            style={{ height: 32 }}
-          />
-          {filtered.length === 0 ? (
-            <div className="text-sm text-[color:var(--color-fg-muted)] py-2">
-              {repos.length === 0 ? "No repositories yet." : "No matches."}
-            </div>
-          ) : (
-            <ul className="space-y-2">
-              {filtered.map((r) => (
-                <li key={r.id} className="flex items-center gap-2 text-sm">
-                  <Avatar name={r.owner} size={20} />
-                  <Link href={`/${r.owner}/${r.name}`} className="truncate">
-                    {r.owner}/{r.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <div className="mt-8">
-            <h2 className="text-sm font-semibold mb-3">Recent activity</h2>
-            <div className="text-sm text-[color:var(--color-fg-muted)]">
-              Activity feeds are E2EE and only visible to repo collaborators.
-            </div>
-          </div>
-        </aside>
-
-        <section>
-          <div className="box mb-4">
-            <div className="box-row">
-              <h1 className="text-lg font-semibold mb-1">Home</h1>
-              <p className="text-sm text-[color:var(--color-fg-muted)]">
-                Welcome back, <strong>{user}</strong>. Your keys are loaded in this browser. Public activity from accounts you follow shows up here.
-              </p>
-            </div>
-            <div className="box-row" style={{ background: "var(--color-canvas-subtle)" }}>
-              <div className="flex gap-3 items-start">
-                <div className="text-2xl" aria-hidden>🔒</div>
-                <div>
-                  <div className="font-semibold mb-1">Your code stays yours</div>
-                  <p className="text-sm text-[color:var(--color-fg-muted)]">
-                    Every push from this browser is encrypted with your repo key before it leaves. The server stores ciphertext — there is no admin "view-as" mode because there is no plaintext to view.
-                  </p>
-                </div>
-              </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+            <FingerprintSigil seed={seed} size={48} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>{user}</div>
+              <div style={{
+                fontFamily: "var(--mono)", fontSize: 11,
+                color: "var(--muted)", whiteSpace: "nowrap",
+                overflow: "hidden", textOverflow: "ellipsis",
+              }}>{fpShort}</div>
             </div>
           </div>
 
-          <div className="box">
-            <div className="box-row flex items-center justify-between">
-              <h2 className="font-semibold">Your repositories</h2>
-              <Link href="/repos/new" className="btn btn-sm">New repository</Link>
+          {/* key session */}
+          <div className="card flat" style={{ padding: 14, background: "var(--paper-2)", marginBottom: 22 }}>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>↳ key state · this session</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <Dot color="var(--moss)" />
+              <span style={{ fontSize: 13, fontWeight: 500 }}>unlocked</span>
+              <span style={{
+                marginLeft: "auto", fontFamily: "var(--mono)",
+                fontSize: 11, color: "var(--muted)",
+              }}>in this tab</span>
             </div>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>
+              private key never leaves the browser
+            </div>
+          </div>
+
+          {/* Repo list */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <div className="eyebrow">↳ your repos · {repos.length}</div>
+            <Link href="/repos/new" className="btn xs" style={{ height: 22 }}>+ new</Link>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {repos.length === 0 ? (
-              <div className="box-row text-center text-[color:var(--color-fg-muted)] py-12">
-                <p className="mb-3">You don't have any repositories yet.</p>
-                <Link href="/repos/new" className="btn btn-primary">Create your first repository</Link>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--muted)", padding: "8px 4px" }}>
+                no repositories yet.
               </div>
             ) : (
               repos.map((r) => (
-                <div key={r.id} className="box-row">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Link href={`/${r.owner}/${r.name}`} className="font-semibold">
-                      {r.owner}/{r.name}
-                    </Link>
-                    <span className={`badge ${r.visibility === "private" ? "badge-private" : ""}`}>
-                      {r.visibility}
-                    </span>
-                  </div>
-                  <div className="text-xs text-[color:var(--color-fg-muted)] flex items-center gap-3">
-                    <span className="flex items-center gap-1">
-                      <LockSm /> end-to-end encrypted
-                    </span>
-                    <span>updated {timeAgo(r.createdAt)}</span>
-                  </div>
-                </div>
+                <Link
+                  key={r.id}
+                  href={`/${r.owner}/${r.name}`}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "auto 1fr auto",
+                    gap: 10, alignItems: "center",
+                    padding: "8px 10px", borderRadius: 5,
+                  }}
+                >
+                  <FingerprintSigil seed={`${r.owner}/${r.name} ${r.id.slice(0, 6)}`} size={20} />
+                  <span style={{ fontSize: 13 }}>{r.name}</span>
+                  <span style={{
+                    fontFamily: "var(--mono)", fontSize: 10,
+                    color: r.visibility === "private" ? "#9a6700" : "var(--moss)",
+                  }}>
+                    {r.visibility === "private" ? "e2ee" : "public"}
+                  </span>
+                </Link>
+              ))
+            )}
+          </div>
+
+          <div className="hr" style={{ margin: "22px 0" }} />
+
+          <div className="eyebrow" style={{ marginBottom: 10 }}>↳ what you can do</div>
+          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+            <li>· create a private repo (e2ee)</li>
+            <li>· publish a public repo</li>
+            <li>· browse, decrypt, push from this browser</li>
+            <li>· rotate repo keys per-collaborator</li>
+          </ul>
+        </aside>
+
+        {/* MAIN ---------------------------------------------------- */}
+        <section>
+          {/* welcome card */}
+          <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+            <div style={{ padding: "22px 26px", display: "grid", gridTemplateColumns: "1fr auto", gap: 24, alignItems: "center" }}>
+              <div>
+                <div className="eyebrow" style={{ marginBottom: 8 }}>↳ session · {today}</div>
+                <h1 className="serif" style={{ fontSize: 32, letterSpacing: "-0.015em", lineHeight: 1.1 }}>
+                  Welcome back, <em style={{ color: "var(--copper)" }}>{user}.</em>
+                </h1>
+                <p style={{ marginTop: 8, fontSize: 14, color: "var(--ink-2)", maxWidth: 480 }}>
+                  Your private key is loaded in this browser. {ciphertextRepos === 0 ? "Create a private repo and we'll wrap its key to yours." : `${ciphertextRepos} ${ciphertextRepos === 1 ? "repo is" : "repos are"} decryptable from this session.`}
+                </p>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>
+                <span>↳ key in memory only</span>
+                <span>↳ no server-side session</span>
+                <span style={{ color: "var(--moss)" }}>✓ public key only · uploaded once</span>
+              </div>
+            </div>
+            <div style={{ padding: "0 26px 18px", display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 18, borderTop: "1px solid var(--line)", paddingTop: 18 }}>
+              <Metric label="repos" value={String(repos.length)} sub={`${ciphertextRepos} private · ${repos.length - ciphertextRepos} public`} />
+              <Metric label="ciphertext repos" value={String(ciphertextRepos)} sub="server cannot read" tone="moss" />
+              <Metric label="wrapped key count" value={String(ciphertextRepos)} sub="one per repo" />
+              <Metric label="fingerprint" value={fingerprint ? fpShort.slice(0, 9) : "—"} sub={fingerprint ? "verify on /transparency" : "ready when keys load"} tone="copper" />
+            </div>
+          </div>
+
+          {/* repos grid */}
+          <div className="eyebrow" style={{ marginBottom: 12, display: "flex", justifyContent: "space-between" }}>
+            <span>↳ your repos</span>
+            <Link href="/repos/new" style={{ color: "var(--copper)", fontSize: 10 }}>+ new repo →</Link>
+          </div>
+          {repos.length === 0 ? (
+            <div className="card" style={{ padding: "36px 26px", textAlign: "center" }}>
+              <p className="serif" style={{ fontSize: 22, marginBottom: 10 }}>
+                Start with a key ceremony, then a repository.
+              </p>
+              <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 18 }}>
+                A fresh 256-bit repo key will be generated in this browser and wrapped to your public key.
+              </p>
+              <Link href="/repos/new" className="btn copper">create your first repo</Link>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 30 }}>
+              {repos.map((r) => <RepoCard key={r.id} r={r} />)}
+            </div>
+          )}
+
+          {/* activity */}
+          <div className="eyebrow" style={{ marginBottom: 12 }}>
+            ↳ encrypted activity · only events you have keys for
+          </div>
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            {repos.length === 0 ? (
+              <div style={{ padding: "22px 26px", fontFamily: "var(--mono)", fontSize: 12, color: "var(--muted)" }}>
+                no activity yet · activity is encrypted to your key · the server can only see that &ldquo;something happened&rdquo;
+              </div>
+            ) : (
+              repos.slice(0, 4).map((r) => (
+                <FeedRow
+                  key={r.id}
+                  who={user} seed={seed}
+                  event={<>created <code>{r.owner}/{r.name}</code> · {r.visibility === "private" ? "wrapped repo key to your public key" : "public, plaintext"}</>}
+                  when={timeAgo(r.createdAt)}
+                  tail={r.visibility === "private" ? "↳ aes-256-gcm repo key · server sees ciphertext only" : "↳ plaintext like any forge · siphr still won't track viewers"}
+                />
               ))
             )}
           </div>
@@ -146,29 +213,82 @@ export default function Dashboard() {
   );
 }
 
-function Avatar({ name, size = 24 }: { name: string; size?: number }) {
+function RepoCard({ r }: { r: Repo }) {
+  const seed = `${r.owner}/${r.name} ${r.id.slice(0, 6)}`;
   return (
-    <span
-      className="inline-flex items-center justify-center rounded-full font-semibold"
-      style={{
-        width: size,
-        height: size,
-        background: "#0969da",
-        color: "#fff",
-        fontSize: Math.round(size * 0.5),
-      }}
-    >
-      {name[0]?.toUpperCase()}
-    </span>
+    <Link href={`/${r.owner}/${r.name}`} className="card" style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <FingerprintSigil seed={seed} size={36} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 14, fontWeight: 500 }}>{r.owner}/{r.name}</span>
+            <Pill variant={r.visibility === "private" ? "encrypted" : "public"}>
+              {r.visibility === "private" ? "e2ee" : "public"}
+            </Pill>
+          </div>
+          <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--muted)", marginTop: 2 }}>
+            ↳ created {timeAgo(r.createdAt)}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: "10px 12px", background: "var(--paper-2)", borderRadius: 5, fontFamily: "var(--mono)", fontSize: 11 }}>
+        <div>
+          <div style={{ color: "var(--muted)", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em" }}>storage</div>
+          <div style={{ marginTop: 2 }}>{r.visibility === "private" ? "ciphertext" : "plaintext"}</div>
+        </div>
+        <div>
+          <div style={{ color: "var(--muted)", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em" }}>server sees</div>
+          <div style={{ marginTop: 2, color: r.visibility === "private" ? "var(--rust)" : "var(--moss)" }}>
+            {r.visibility === "private" ? "0 plain" : "all (intent)"}
+          </div>
+        </div>
+      </div>
+    </Link>
   );
 }
 
-function LockSm() {
+function Metric({ label, value, sub, tone }: { label: string; value: string; sub: string; tone?: "moss" | "copper" }) {
+  const color = tone === "moss" ? "var(--moss)" : tone === "copper" ? "var(--copper)" : "var(--ink)";
   return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-      <path d="M4 4a4 4 0 1 1 8 0v2h.25c.966 0 1.75.784 1.75 1.75v5.5A1.75 1.75 0 0 1 12.25 15h-8.5A1.75 1.75 0 0 1 2 13.25v-5.5C2 6.784 2.784 6 3.75 6H4Zm6.5 2V4a2.5 2.5 0 0 0-5 0v2Z" />
-    </svg>
+    <div>
+      <div className="eyebrow" style={{ marginBottom: 4 }}>{label}</div>
+      <div className="serif" style={{ fontSize: 32, lineHeight: 1, color }}>{value}</div>
+      <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--muted)", marginTop: 4 }}>{sub}</div>
+    </div>
   );
+}
+
+function FeedRow({
+  who, seed, event, when, tail, tone, last,
+}: {
+  who: string; seed: string; event: React.ReactNode;
+  when: string; tail: string;
+  tone?: "warn"; last?: boolean;
+}) {
+  return (
+    <div style={{
+      display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 14,
+      alignItems: "start", padding: "16px 20px",
+      borderBottom: last ? "none" : "1px solid var(--line-2)",
+    }}>
+      <FingerprintSigil seed={seed} size={28} />
+      <div>
+        <div style={{ fontSize: 13 }}>
+          <strong>{who}</strong> <span style={{ color: "var(--ink-2)" }}>{event}</span>
+        </div>
+        <div style={{
+          fontFamily: "var(--mono)", fontSize: 10,
+          color: tone === "warn" ? "#9a6700" : "var(--muted)",
+          marginTop: 4,
+        }}>{tail}</div>
+      </div>
+      <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>{when}</span>
+    </div>
+  );
+}
+
+function formatFp(fp: string): string {
+  return fp.replace(/(.{4})/g, "$1 ").trim();
 }
 
 function timeAgo(iso: string) {
