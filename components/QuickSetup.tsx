@@ -36,8 +36,8 @@ export default function QuickSetup({
   const [active, setActive] = useState<"none" | "editor" | "drop">("none");
   const [progress, setProgress] = useState<string | null>(null);
   const cloneUrl = typeof window !== "undefined"
-    ? `${window.location.origin}/r/${repo.owner}/${repo.name}.git`
-    : `https://siphr.dev/r/${repo.owner}/${repo.name}.git`;
+    ? `${window.location.origin}/${repo.owner}/${repo.name}.git`
+    : `https://siphr.dev/${repo.owner}/${repo.name}.git`;
 
   async function doCommit(files: FileEntry[], message: string) {
     setProgress("encrypting & uploading…");

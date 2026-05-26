@@ -25,7 +25,7 @@ export default function WhyNoPlainPushPage() {
 
           <p>
             So for private repos, the smart-HTTP endpoint at
-            <code> /r/{`{owner}/{name}`}.git</code> returns:
+            <code> /{`{owner}/{name}`}.git</code> returns:
           </p>
 
           <pre style={{
