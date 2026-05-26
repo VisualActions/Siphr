@@ -72,6 +72,11 @@ function getSubtle(): SubtleCrypto {
   return crypto.subtle;
 }
 
+/** TS lib.dom requires ArrayBufferView<ArrayBuffer>; coerce away SharedArrayBuffer. */
+function bs(b: Uint8Array): BufferSource {
+  return b as unknown as BufferSource;
+}
+
 export async function generateIdentity(): Promise<IdentityKeypair> {
   const subtle = getSubtle();
   const pair = (await subtle.generateKey(
@@ -92,13 +97,13 @@ async function deriveKeyFromPassphrase(
   const subtle = getSubtle();
   const baseKey = await subtle.importKey(
     "raw",
-    enc.encode(passphrase),
+    bs(enc.encode(passphrase)),
     "PBKDF2",
     false,
     ["deriveKey"]
   );
   return subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: iters, hash: "SHA-256" },
+    { name: "PBKDF2", salt: bs(salt), iterations: iters, hash: "SHA-256" },
     baseKey,
     { name: "AES-GCM", length: 256 },
     false,
@@ -115,7 +120,7 @@ export async function encryptIdentity(
   const key = await deriveKeyFromPassphrase(passphrase, salt, PBKDF2_ITERS);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const plaintext = enc.encode(JSON.stringify(identity.privateKeyJwk));
-  const ct = await subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext);
+  const ct = await subtle.encrypt({ name: "AES-GCM", iv: bs(iv) }, key, bs(plaintext));
   return {
     publicKeyJwk: identity.publicKeyJwk,
     wrappedPrivateKey: { ct: toB64Url(ct), iv: toB64Url(iv) },
@@ -133,7 +138,7 @@ export async function decryptIdentity(
   const key = await deriveKeyFromPassphrase(passphrase, salt, encrypted.iters);
   const iv = fromB64Url(encrypted.wrappedPrivateKey.iv);
   const ct = fromB64Url(encrypted.wrappedPrivateKey.ct);
-  const pt = await subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
+  const pt = await subtle.decrypt({ name: "AES-GCM", iv: bs(iv) }, key, bs(ct));
   const privateKeyJwk = JSON.parse(dec.decode(pt)) as JsonWebKey;
   return { publicKeyJwk: encrypted.publicKeyJwk, privateKeyJwk };
 }
@@ -190,7 +195,7 @@ export async function wrapRepoKey(
     ["encrypt"]
   );
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await subtle.encrypt({ name: "AES-GCM", iv }, wrappingKey, repoKey);
+  const ct = await subtle.encrypt({ name: "AES-GCM", iv: bs(iv) }, wrappingKey, bs(repoKey));
   const epkJwk = await subtle.exportKey("jwk", ephemeral.publicKey);
   return {
     ct: toB64Url(ct),
@@ -221,7 +226,7 @@ export async function unwrapRepoKey(
   );
   const iv = fromB64Url(wrapped.iv);
   const ct = fromB64Url(wrapped.ct);
-  const pt = await subtle.decrypt({ name: "AES-GCM", iv }, wrappingKey, ct);
+  const pt = await subtle.decrypt({ name: "AES-GCM", iv: bs(iv) }, wrappingKey, bs(ct));
   return new Uint8Array(pt);
 }
 
@@ -232,13 +237,13 @@ export async function encryptWithRepoKey(
   const subtle = getSubtle();
   const key = await subtle.importKey(
     "raw",
-    repoKey,
+    bs(repoKey),
     { name: "AES-GCM", length: 256 },
     false,
     ["encrypt"]
   );
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext);
+  const ct = await subtle.encrypt({ name: "AES-GCM", iv: bs(iv) }, key, bs(plaintext));
   return { ct: toB64Url(ct), iv: toB64Url(iv) };
 }
 
@@ -249,14 +254,14 @@ export async function decryptWithRepoKey(
   const subtle = getSubtle();
   const key = await subtle.importKey(
     "raw",
-    repoKey,
+    bs(repoKey),
     { name: "AES-GCM", length: 256 },
     false,
     ["decrypt"]
   );
   const iv = fromB64Url(blob.iv);
   const ct = fromB64Url(blob.ct);
-  const pt = await subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
+  const pt = await subtle.decrypt({ name: "AES-GCM", iv: bs(iv) }, key, bs(ct));
   return new Uint8Array(pt);
 }
 
@@ -269,6 +274,6 @@ export async function fingerprint(pubJwk: JsonWebKey): Promise<string> {
     x: pubJwk.x,
     y: pubJwk.y,
   });
-  const hash = await subtle.digest("SHA-256", enc.encode(canonical));
+  const hash = await subtle.digest("SHA-256", bs(enc.encode(canonical)));
   return toB64Url(hash).slice(0, 16);
 }
