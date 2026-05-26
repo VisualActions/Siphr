@@ -26,6 +26,18 @@ export async function PUT(req: Request, { params }: Params) {
   return NextResponse.json({ ok: true, oid, bytes: buf.length });
 }
 
+export async function HEAD(_req: Request, { params }: Params) {
+  const { id, oid } = await params;
+  if (!(await getRepo(id))) {
+    return new Response(null, { status: 404 });
+  }
+  if (!/^[a-f0-9]{6,128}$/.test(oid)) {
+    return new Response(null, { status: 400 });
+  }
+  const buf = await getObject(id, oid);
+  return new Response(null, { status: buf ? 200 : 404 });
+}
+
 export async function GET(_req: Request, { params }: Params) {
   const { id, oid } = await params;
   if (!(await getRepo(id))) {

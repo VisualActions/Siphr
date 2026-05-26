@@ -236,11 +236,13 @@ export default function HomePage() {
               <span>·</span>
               <span>build a4f9.b22e</span>
             </div>
-            <div style={{ display: "flex", gap: 22 }}>
+            <div style={{ display: "flex", gap: 22, flexWrap: "wrap" }}>
               <Link href="/security">security</Link>
               <Link href="/transparency">transparency log</Link>
-              <a href="https://github.com/VisualActions/Siphr" target="_blank" rel="noreferrer">source</a>
+              <Link href="/roadmap">roadmap</Link>
+              <Link href="/featured">featured</Link>
               <Link href="/explore">explore</Link>
+              <a href="https://github.com/VisualActions/Siphr" target="_blank" rel="noreferrer">source</a>
             </div>
           </div>
         </footer>

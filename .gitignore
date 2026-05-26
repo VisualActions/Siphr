@@ -16,4 +16,5 @@ data/
 # Design handoff extraction artifacts
 design-out/
 design-out2/
+design-out3/
 scripts/extract-design.mjs

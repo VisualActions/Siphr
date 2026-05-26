@@ -5,6 +5,7 @@ import Link from "next/link";
 import TopNav from "@/components/TopNav";
 import VerifiedBadge from "@/components/VerifiedBadge";
 import FileBrowser from "@/components/FileBrowser";
+import QuickSetup from "@/components/QuickSetup";
 import {
   FingerprintSigil,
   Pill,
@@ -194,42 +195,41 @@ export default function RepoPage({
               </div>
             )}
 
-            {/* file tree / empty */}
-            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-              {info.objectCount === 0 ? (
-                <div style={{ padding: "36px 24px", textAlign: "center" }}>
-                  <p className="serif" style={{ fontSize: 22, marginBottom: 8 }}>
-                    Quick setup — push your first commit.
-                  </p>
-                  <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>
-                    {isPublic
-                      ? "Plaintext like any forge. We host the bits, that's it."
-                      : "Every object encrypted client-side with a 256-bit AES key wrapped to your public key."}
-                  </p>
-                  <div style={{
-                    display: "inline-block", textAlign: "left",
-                    fontFamily: "var(--mono)", fontSize: 12,
-                    padding: "12px 16px", background: "#0f0d0a", color: "#e8d9b8",
-                    borderRadius: 6, border: "1px solid #2a2520",
-                  }}>
-                    <div style={{ color: "#806c4a" }}># after `siphr-cli init` or via the bundled push script:</div>
-                    <div>git remote add siphr siphr.dev/{info.owner}/{info.name}.git</div>
-                    <div>git push siphr {info.defaultBranch}</div>
+            {/* file tree / quick-setup empty state */}
+            {info.objectCount === 0 ? (
+              <QuickSetup
+                repo={{
+                  id: info.id,
+                  owner: info.owner,
+                  name: info.name,
+                  visibility: info.visibility,
+                  defaultBranch: info.defaultBranch,
+                }}
+                authorName={user ?? info.owner}
+                onCommitted={() => {
+                  // Re-fetch to flip out of empty state.
+                  fetch(`/api/repos/by-name/${owner}/${name}`)
+                    .then((r) => (r.ok ? r.json() : null))
+                    .then((j) => j && setInfo(j))
+                    .catch(() => {});
+                }}
+              />
+            ) : (
+              <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                {isPublic ? (
+                  <FileBrowser
+                    owner={info.owner}
+                    name={info.name}
+                    branch={info.defaultBranch}
+                    path=""
+                  />
+                ) : (
+                  <div style={{ padding: "26px 22px", fontSize: 13, fontFamily: "var(--mono)", color: "var(--muted)" }}>
+                    🔒 Encrypted file tree — decryptable client-side with a wrapped repo key.
                   </div>
-                </div>
-              ) : isPublic ? (
-                <FileBrowser
-                  owner={info.owner}
-                  name={info.name}
-                  branch={info.defaultBranch}
-                  path=""
-                />
-              ) : (
-                <div style={{ padding: "26px 22px", fontSize: 13, fontFamily: "var(--mono)", color: "var(--muted)" }}>
-                  🔒 Encrypted file tree — decryptable client-side with a wrapped repo key.
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
 
             {/* "what the server sees" reveal — private only */}
             {!isPublic && info.objectCount > 0 && (
