@@ -309,7 +309,67 @@ async function main() {
   console.log(
     `\n  pushed ${count} ${isPrivate ? "encrypted" : "plaintext"} objects (${(bytes / 1024).toFixed(1)} KB)`
   );
+
+  console.log("  uploading refs...");
+  const refs = await collectRefs();
+  if (refs.length === 0) {
+    console.warn("  no refs found in .git/refs — repo may not have any commits");
+  } else {
+    const res = await fetch(`${BASE}/api/repos/${repoId}/refs`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refs }),
+    });
+    if (!res.ok) {
+      throw new Error(`refs upload failed (${res.status}): ${await res.text()}`);
+    }
+    console.log(`  pushed ${refs.length} refs`);
+  }
+
   console.log(`  visible at: ${BASE}/${USERNAME}/${REPO_NAME}`);
+}
+
+async function collectRefs() {
+  const out = [];
+  // HEAD (symbolic)
+  try {
+    const head = (await readFile(path.join(GIT_DIR, "HEAD"), "utf8")).trim();
+    if (head.startsWith("ref: ")) {
+      out.push({ name: "HEAD", target: head });
+    } else if (/^[a-f0-9]{40}$/.test(head)) {
+      out.push({ name: "HEAD", oid: head });
+    }
+  } catch {}
+
+  // refs/heads/* and refs/tags/*
+  const refsRoot = path.join(GIT_DIR, "refs");
+  for (const sub of ["heads", "tags"]) {
+    const dir = path.join(refsRoot, sub);
+    try {
+      const files = await readdir(dir, { withFileTypes: true });
+      for (const f of files) {
+        if (!f.isFile()) continue;
+        const oid = (await readFile(path.join(dir, f.name), "utf8")).trim();
+        if (/^[a-f0-9]{40}$/.test(oid)) {
+          out.push({ name: `refs/${sub}/${f.name}`, oid });
+        }
+      }
+    } catch {}
+  }
+
+  // packed-refs (in case loose refs were packed)
+  try {
+    const packed = await readFile(path.join(GIT_DIR, "packed-refs"), "utf8");
+    for (const line of packed.split("\n")) {
+      if (!line || line.startsWith("#") || line.startsWith("^")) continue;
+      const m = line.match(/^([a-f0-9]{40})\s+(.+)$/);
+      if (m && !out.some((r) => r.name === m[2])) {
+        out.push({ name: m[2], oid: m[1] });
+      }
+    }
+  } catch {}
+
+  return out;
 }
 
 main().catch((err) => {

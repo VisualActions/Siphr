@@ -35,7 +35,7 @@ export async function GET(_req: Request, { params }: Params) {
   if (!buf) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  return new Response(buf, {
+  return new Response(new Uint8Array(buf), {
     headers: { "content-type": "application/octet-stream" },
   });
 }

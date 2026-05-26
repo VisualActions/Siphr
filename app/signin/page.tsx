@@ -18,19 +18,37 @@ export default function SigninPage() {
     setError(null);
     setBusy(true);
     try {
+      // Try local cache first (avoids a round-trip on the device you signed up on).
+      let encrypted: EncryptedIdentity | null = null;
       const raw = localStorage.getItem(`siphr:identity:${username}`);
-      if (!raw) {
-        throw new Error(
-          "No local identity for that username in this browser. Sign in on the device you signed up on, or restore from a recovery code."
-        );
+      if (raw) {
+        encrypted = JSON.parse(raw) as EncryptedIdentity;
+      } else {
+        // Fall back to the server's copy — works on any browser/device.
+        const res = await fetch(`/api/users/${encodeURIComponent(username)}/identity`);
+        if (res.status === 404) throw new Error("No account with that username.");
+        if (!res.ok) throw new Error(`Server error (${res.status})`);
+        const j = await res.json();
+        encrypted = j.encryptedIdentity as EncryptedIdentity;
       }
-      const encrypted = JSON.parse(raw) as EncryptedIdentity;
+
+      if (!encrypted) throw new Error("Could not load identity.");
+
       const id = await decryptIdentity(encrypted, passphrase);
       await fingerprint(id.publicKeyJwk);
+
+      // Cache locally for fast sign-ins next time.
+      localStorage.setItem(`siphr:identity:${username}`, JSON.stringify(encrypted));
       localStorage.setItem("siphr:current_user", username);
       router.push("/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign-in failed");
+      // AES-GCM auth failure throws an OperationError — translate to a clearer message.
+      const msg = err instanceof Error ? err.message : "Sign-in failed";
+      setError(
+        msg.includes("operation-specific reason") || msg.toLowerCase().includes("operation")
+          ? "Wrong passphrase."
+          : msg
+      );
       setBusy(false);
     }
   }
@@ -74,6 +92,9 @@ export default function SigninPage() {
             >
               {busy ? "Unwrapping key…" : "Sign in"}
             </button>
+            <p className="text-xs text-[color:var(--color-fg-muted)] leading-relaxed">
+              Your encrypted identity is fetched from Siphr; the passphrase that unwraps it never leaves this browser.
+            </p>
           </form>
           <div className="box p-4 mt-4 text-center text-sm">
             New to Siphr? <Link href="/signup">Create an account</Link>

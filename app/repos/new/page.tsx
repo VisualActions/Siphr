@@ -79,7 +79,7 @@ export default function NewRepoPage() {
               />
             </div>
             <div className="text-sm text-[color:var(--color-fg-muted)] mt-2">
-              Great repository names are short and memorable. Need inspiration? How about <em>{["humble-tortoise", "fluffy-cipher", "studious-octopus"][Math.floor(Math.random() * 3)]}</em>?
+              Great repository names are short and memorable.
             </div>
           </div>
 

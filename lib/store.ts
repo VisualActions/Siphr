@@ -1,131 +1,279 @@
 /**
- * Server-side store. Filesystem-backed for v0.1 — swap for Postgres/Blob later.
+ * Server-side persistence backed by Supabase Postgres.
  *
- * Important: the server only persists public material and ciphertext.
- * It never receives or stores plaintext private keys or repo keys.
+ * The server only persists public material and either:
+ *   - public repos: zlib-deflated plaintext git objects
+ *   - private repos: AES-256-GCM ciphertext (server holds no key to unwrap)
  */
 
-import { promises as fs } from "fs";
-import path from "path";
-
-const DATA_DIR = process.env.SIPHR_DATA_DIR ?? path.join(process.cwd(), "data");
+import { bytesToHexLiteral, decodeBytea, pg, upsert } from "./supabase";
 
 export type StoredUser = {
   username: string;
   fingerprint: string;
   publicKeyJwk: JsonWebKey;
-  /** Encrypted identity blob — server stores it as opaque JSON. */
   encryptedIdentity: unknown;
   createdAt: string;
-  /** Verified by Siphr (e.g. Microsoft official account). */
   verified?: boolean;
-  /** Optional canonical display name shown next to the badge, e.g. "Microsoft". */
   verifiedAs?: string;
-  /** ISO date when verification was granted. */
   verifiedAt?: string;
-  /** Org / individual / bot — affects badge tone. */
   verifiedKind?: "org" | "individual" | "bot";
 };
-
-export async function setUserVerification(
-  username: string,
-  v: Pick<StoredUser, "verified" | "verifiedAs" | "verifiedAt" | "verifiedKind">
-): Promise<StoredUser> {
-  const users = await listUsers();
-  const i = users.findIndex((u) => u.username === username);
-  if (i === -1) throw new Error("no such user");
-  users[i] = { ...users[i], ...v };
-  await writeJson(usersFile(), users);
-  return users[i];
-}
 
 export type StoredRepo = {
   id: string;
   owner: string;
   name: string;
-  /** "private" | "public". Public repos still encrypted; key is published. */
   visibility: "private" | "public";
+  description: string | null;
+  defaultBranch: string;
   createdAt: string;
-  /** username -> wrapped repo key */
   wrappedKeys: Record<string, unknown>;
 };
 
-async function ensureDir(p: string) {
-  await fs.mkdir(p, { recursive: true });
+type UserRow = {
+  username: string;
+  fingerprint: string;
+  public_key_jwk: JsonWebKey;
+  encrypted_identity: unknown;
+  verified: boolean | null;
+  verified_as: string | null;
+  verified_kind: string | null;
+  verified_at: string | null;
+  created_at: string;
+};
+type RepoRow = {
+  id: string;
+  owner: string;
+  name: string;
+  visibility: "private" | "public";
+  description: string | null;
+  default_branch: string;
+  wrapped_keys: Record<string, unknown>;
+  created_at: string;
+};
+
+function userFromRow(r: UserRow): StoredUser {
+  return {
+    username: r.username,
+    fingerprint: r.fingerprint,
+    publicKeyJwk: r.public_key_jwk,
+    encryptedIdentity: r.encrypted_identity,
+    createdAt: r.created_at,
+    verified: r.verified ?? false,
+    verifiedAs: r.verified_as ?? undefined,
+    verifiedKind: (r.verified_kind as StoredUser["verifiedKind"]) ?? undefined,
+    verifiedAt: r.verified_at ?? undefined,
+  };
+}
+function repoFromRow(r: RepoRow): StoredRepo {
+  return {
+    id: r.id,
+    owner: r.owner,
+    name: r.name,
+    visibility: r.visibility,
+    description: r.description,
+    defaultBranch: r.default_branch,
+    createdAt: r.created_at,
+    wrappedKeys: r.wrapped_keys ?? {},
+  };
 }
 
-async function readJson<T>(file: string, fallback: T): Promise<T> {
-  try {
-    const buf = await fs.readFile(file, "utf8");
-    return JSON.parse(buf) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-async function writeJson(file: string, data: unknown): Promise<void> {
-  await ensureDir(path.dirname(file));
-  await fs.writeFile(file, JSON.stringify(data, null, 2), "utf8");
-}
-
-const usersFile = () => path.join(DATA_DIR, "users.json");
-const reposFile = () => path.join(DATA_DIR, "repos.json");
-const repoDir = (id: string) => path.join(DATA_DIR, "repos", id);
+// ---- users ----
 
 export async function listUsers(): Promise<StoredUser[]> {
-  return readJson<StoredUser[]>(usersFile(), []);
+  const rows = await pg<UserRow[]>("GET", "users?select=*&order=created_at.desc");
+  return (rows ?? []).map(userFromRow);
 }
 
 export async function getUser(username: string): Promise<StoredUser | null> {
-  const users = await listUsers();
-  return users.find((u) => u.username === username) ?? null;
+  const rows = await pg<UserRow[]>(
+    "GET",
+    `users?select=*&username=eq.${encodeURIComponent(username)}&limit=1`
+  );
+  return rows?.[0] ? userFromRow(rows[0]) : null;
 }
 
 export async function createUser(u: StoredUser): Promise<void> {
-  const users = await listUsers();
-  if (users.some((x) => x.username === u.username)) {
-    throw new Error("username taken");
-  }
-  users.push(u);
-  await writeJson(usersFile(), users);
+  await pg("POST", "users", [
+    {
+      username: u.username,
+      fingerprint: u.fingerprint,
+      public_key_jwk: u.publicKeyJwk,
+      encrypted_identity: u.encryptedIdentity,
+    },
+  ]);
 }
 
+export async function setUserVerification(
+  username: string,
+  v: Pick<StoredUser, "verified" | "verifiedAs" | "verifiedAt" | "verifiedKind">
+): Promise<StoredUser> {
+  const patch: Record<string, unknown> = {
+    verified: v.verified ?? false,
+    verified_as: v.verified ? v.verifiedAs ?? null : null,
+    verified_kind: v.verified ? v.verifiedKind ?? null : null,
+    verified_at: v.verified ? v.verifiedAt ?? new Date().toISOString() : null,
+  };
+  const rows = await pg<UserRow[]>(
+    "PATCH",
+    `users?username=eq.${encodeURIComponent(username)}&select=*`,
+    patch,
+    { prefer: "return=representation" }
+  );
+  if (!rows?.[0]) throw new Error("no such user");
+  return userFromRow(rows[0]);
+}
+
+// ---- repos ----
+
 export async function listRepos(): Promise<StoredRepo[]> {
-  return readJson<StoredRepo[]>(reposFile(), []);
+  const rows = await pg<RepoRow[]>("GET", "repos?select=*&order=created_at.desc");
+  return (rows ?? []).map(repoFromRow);
 }
 
 export async function getRepo(id: string): Promise<StoredRepo | null> {
-  const repos = await listRepos();
-  return repos.find((r) => r.id === id) ?? null;
+  const rows = await pg<RepoRow[]>(
+    "GET",
+    `repos?select=*&id=eq.${encodeURIComponent(id)}&limit=1`
+  );
+  return rows?.[0] ? repoFromRow(rows[0]) : null;
+}
+
+export async function getRepoByName(
+  owner: string,
+  name: string
+): Promise<StoredRepo | null> {
+  const rows = await pg<RepoRow[]>(
+    "GET",
+    `repos?select=*&owner=eq.${encodeURIComponent(owner)}&name=eq.${encodeURIComponent(name)}&limit=1`
+  );
+  return rows?.[0] ? repoFromRow(rows[0]) : null;
 }
 
 export async function reposFor(username: string): Promise<StoredRepo[]> {
-  const repos = await listRepos();
-  return repos.filter(
-    (r) => r.owner === username || username in (r.wrappedKeys ?? {})
+  const owned = await pg<RepoRow[]>(
+    "GET",
+    `repos?select=*&owner=eq.${encodeURIComponent(username)}&order=created_at.desc`
+  );
+  return (owned ?? []).map(repoFromRow);
+}
+
+export async function createRepo(
+  r: Omit<StoredRepo, "id" | "createdAt" | "defaultBranch" | "description"> & {
+    description?: string | null;
+    defaultBranch?: string;
+  }
+): Promise<StoredRepo> {
+  const rows = await pg<RepoRow[]>(
+    "POST",
+    "repos?select=*",
+    [
+      {
+        owner: r.owner,
+        name: r.name,
+        visibility: r.visibility,
+        description: r.description ?? null,
+        default_branch: r.defaultBranch ?? "main",
+        wrapped_keys: r.wrappedKeys ?? {},
+      },
+    ],
+    { prefer: "return=representation" }
+  );
+  return repoFromRow(rows[0]);
+}
+
+// ---- refs ----
+
+export type StoredRef = {
+  name: string;
+  oid: string | null;
+  target: string | null;
+  updatedAt: string;
+};
+
+type RefRow = {
+  repo_id: string;
+  name: string;
+  oid: string | null;
+  target: string | null;
+  updated_at: string;
+};
+
+export async function listRefs(repoId: string): Promise<StoredRef[]> {
+  const rows = await pg<RefRow[]>(
+    "GET",
+    `refs?select=*&repo_id=eq.${encodeURIComponent(repoId)}&order=name.asc`
+  );
+  return (rows ?? []).map((r) => ({
+    name: r.name,
+    oid: r.oid,
+    target: r.target,
+    updatedAt: r.updated_at,
+  }));
+}
+
+export async function getRef(repoId: string, name: string): Promise<StoredRef | null> {
+  const rows = await pg<RefRow[]>(
+    "GET",
+    `refs?select=*&repo_id=eq.${encodeURIComponent(repoId)}&name=eq.${encodeURIComponent(name)}&limit=1`
+  );
+  const r = rows?.[0];
+  if (!r) return null;
+  return { name: r.name, oid: r.oid, target: r.target, updatedAt: r.updated_at };
+}
+
+/** Resolve symbolic refs (e.g. HEAD -> refs/heads/main -> oid). */
+export async function resolveRef(repoId: string, name: string): Promise<string | null> {
+  let cur = await getRef(repoId, name);
+  let hops = 0;
+  while (cur && cur.target && !cur.oid && hops < 5) {
+    const next = cur.target.startsWith("ref: ") ? cur.target.slice(5) : cur.target;
+    cur = await getRef(repoId, next);
+    hops++;
+  }
+  return cur?.oid ?? null;
+}
+
+export async function putRef(
+  repoId: string,
+  name: string,
+  value: { oid?: string | null; target?: string | null }
+): Promise<void> {
+  await upsert(
+    "refs",
+    {
+      repo_id: repoId,
+      name,
+      oid: value.oid ?? null,
+      target: value.target ?? null,
+      updated_at: new Date().toISOString(),
+    },
+    "repo_id,name",
+    "minimal"
   );
 }
 
-export async function createRepo(r: StoredRepo): Promise<void> {
-  const repos = await listRepos();
-  if (repos.some((x) => x.id === r.id)) {
-    throw new Error("repo id collision");
-  }
-  repos.push(r);
-  await writeJson(reposFile(), repos);
-  await ensureDir(repoDir(r.id));
-  await ensureDir(path.join(repoDir(r.id), "objects"));
-}
+// ---- objects ----
 
 export async function putObject(
   repoId: string,
   oid: string,
-  ciphertext: Uint8Array | Buffer
+  data: Uint8Array | Buffer
 ): Promise<void> {
   if (!/^[a-f0-9]{6,128}$/.test(oid)) throw new Error("invalid oid");
-  const dir = path.join(repoDir(repoId), "objects", oid.slice(0, 2));
-  await ensureDir(dir);
-  await fs.writeFile(path.join(dir, oid.slice(2)), Buffer.from(ciphertext));
+  const buf = Buffer.from(data);
+  await upsert(
+    "objects",
+    {
+      repo_id: repoId,
+      oid,
+      data: bytesToHexLiteral(buf),
+      size: buf.length,
+    },
+    "repo_id,oid",
+    "minimal"
+  );
 }
 
 export async function getObject(
@@ -133,11 +281,24 @@ export async function getObject(
   oid: string
 ): Promise<Buffer | null> {
   if (!/^[a-f0-9]{6,128}$/.test(oid)) return null;
-  try {
-    return await fs.readFile(
-      path.join(repoDir(repoId), "objects", oid.slice(0, 2), oid.slice(2))
-    );
-  } catch {
-    return null;
-  }
+  const rows = await pg<{ data: string }[]>(
+    "GET",
+    `objects?select=data&repo_id=eq.${encodeURIComponent(repoId)}&oid=eq.${encodeURIComponent(oid)}&limit=1`
+  );
+  if (!rows?.[0]) return null;
+  return decodeBytea(rows[0].data);
+}
+
+export async function repoStats(
+  repoId: string
+): Promise<{ objectCount: number; bytes: number }> {
+  const list = await pg<{ size: number }[]>(
+    "GET",
+    `objects?select=size&repo_id=eq.${encodeURIComponent(repoId)}`
+  );
+  const arr = list ?? [];
+  return {
+    objectCount: arr.length,
+    bytes: arr.reduce((s, r) => s + (r.size ?? 0), 0),
+  };
 }

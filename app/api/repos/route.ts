@@ -26,6 +26,7 @@ export async function POST(req: Request) {
   const owner = typeof b.owner === "string" ? b.owner : "";
   const name = typeof b.name === "string" ? b.name : "";
   const visibility = b.visibility === "public" ? "public" : "private";
+  const description = typeof b.description === "string" ? b.description : null;
   const wrappedKeys =
     b.wrappedKeys && typeof b.wrappedKeys === "object"
       ? (b.wrappedKeys as Record<string, unknown>)
@@ -46,22 +47,25 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  // Public repos: no key needed. Stored as plaintext, readable by anyone.
 
-  const id = crypto.randomUUID();
   try {
-    await createRepo({
-      id,
+    const repo = await createRepo({
       owner,
       name,
       visibility,
+      description,
       wrappedKeys,
-      createdAt: new Date().toISOString(),
+    });
+    return NextResponse.json({
+      ok: true,
+      id: repo.id,
+      owner: repo.owner,
+      name: repo.name,
+      visibility: repo.visibility,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "server error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const status = msg.includes("duplicate") || msg.includes("23505") ? 409 : 500;
+    return NextResponse.json({ error: msg }, { status });
   }
-
-  return NextResponse.json({ ok: true, id, owner, name, visibility });
 }
