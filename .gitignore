@@ -10,3 +10,5 @@ data/
 
 # Bootstrap push state — contains private key + repo key plaintext
 .siphr-push.json
+
+.vercel
