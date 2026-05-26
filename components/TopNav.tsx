@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { SiphrMark } from "./Primitives";
 
-type Props = { active?: "explore" | "security" | "transparency" | null };
+type Props = { active?: "explore" | "featured" | "security" | "transparency" | null };
 
 export default function TopNav({ active = null }: Props) {
   const [user, setUser] = useState<string | null>(null);
@@ -43,6 +43,7 @@ export default function TopNav({ active = null }: Props) {
 
       <nav className="navlinks">
         <Link href="/explore" style={{ color: linkColor("explore") }}>explore</Link>
+        <Link href="/featured" style={{ color: linkColor("featured") }}>featured</Link>
         <Link href="/security" style={{ color: linkColor("security") }}>security</Link>
         <Link href="/transparency" style={{ color: linkColor("transparency") }}>transparency</Link>
       </nav>
@@ -93,6 +94,11 @@ export default function TopNav({ active = null }: Props) {
                   <MenuLink href={`/${user}`}>your profile</MenuLink>
                   <MenuLink href="/dashboard">your repositories</MenuLink>
                   <MenuLink href="/transparency">transparency log</MenuLink>
+                  {user === "siphr" && (
+                    <MenuLink href="/admin">
+                      <span style={{ color: "var(--copper)" }}>operator console →</span>
+                    </MenuLink>
+                  )}
                   <div style={{ height: 1, background: "var(--line-2)", margin: "4px 0" }} />
                   <button
                     onClick={signOut}
@@ -126,7 +132,7 @@ export default function TopNav({ active = null }: Props) {
   );
 }
 
-function MenuLink({ href, children }: { href: string; children: React.ReactNode }) {
+function MenuLink({ href, children }: { href: string; children: React.ReactNode }) { // eslint-disable-line
   return (
     <Link href={href} style={{
       display: "block", padding: "6px 12px", fontSize: 13,

@@ -29,6 +29,11 @@ export type StoredRepo = {
   defaultBranch: string;
   createdAt: string;
   wrappedKeys: Record<string, unknown>;
+  featured?: boolean;
+  featuredAt?: string | null;
+  featuredTag?: string | null;
+  featuredBlurb?: string | null;
+  featuredRank?: number | null;
 };
 
 type UserRow = {
@@ -51,6 +56,11 @@ type RepoRow = {
   default_branch: string;
   wrapped_keys: Record<string, unknown>;
   created_at: string;
+  featured?: boolean | null;
+  featured_at?: string | null;
+  featured_tag?: string | null;
+  featured_blurb?: string | null;
+  featured_rank?: number | null;
 };
 
 function userFromRow(r: UserRow): StoredUser {
@@ -76,6 +86,11 @@ function repoFromRow(r: RepoRow): StoredRepo {
     defaultBranch: r.default_branch,
     createdAt: r.created_at,
     wrappedKeys: r.wrapped_keys ?? {},
+    featured: r.featured ?? false,
+    featuredAt: r.featured_at ?? null,
+    featuredTag: r.featured_tag ?? null,
+    featuredBlurb: r.featured_blurb ?? null,
+    featuredRank: r.featured_rank ?? null,
   };
 }
 
@@ -296,6 +311,76 @@ export async function getObject(
   );
   if (!rows?.[0]) return null;
   return decodeBytea(rows[0].data);
+}
+
+export async function listFeaturedRepos(): Promise<StoredRepo[]> {
+  const rows = await pg<RepoRow[]>(
+    "GET",
+    "repos?select=*&featured=eq.true&order=featured_rank.asc.nullslast,featured_at.desc"
+  );
+  return (rows ?? []).map(repoFromRow);
+}
+
+export async function setRepoFeatured(
+  id: string,
+  v: {
+    featured: boolean;
+    tag?: string | null;
+    blurb?: string | null;
+    rank?: number | null;
+  }
+): Promise<StoredRepo> {
+  const patch: Record<string, unknown> = {
+    featured: v.featured,
+    featured_at: v.featured ? new Date().toISOString() : null,
+    featured_tag: v.featured ? v.tag ?? null : null,
+    featured_blurb: v.featured ? v.blurb ?? null : null,
+    featured_rank: v.featured ? v.rank ?? null : null,
+  };
+  const rows = await pg<RepoRow[]>(
+    "PATCH",
+    `repos?id=eq.${encodeURIComponent(id)}&select=*`,
+    patch,
+    { prefer: "return=representation" }
+  );
+  if (!rows?.[0]) throw new Error("no such repo");
+  return repoFromRow(rows[0]);
+}
+
+export async function totalRepoCounts(): Promise<{
+  total: number;
+  privateCount: number;
+  publicCount: number;
+  featuredCount: number;
+}> {
+  const rows = await pg<{ visibility: string; featured: boolean | null }[]>(
+    "GET",
+    "repos?select=visibility,featured"
+  );
+  const list = rows ?? [];
+  return {
+    total: list.length,
+    privateCount: list.filter((r) => r.visibility === "private").length,
+    publicCount: list.filter((r) => r.visibility === "public").length,
+    featuredCount: list.filter((r) => r.featured).length,
+  };
+}
+
+export async function totalUserCount(): Promise<number> {
+  const rows = await pg<{ username: string }[]>("GET", "users?select=username");
+  return (rows ?? []).length;
+}
+
+export async function totalObjectStats(): Promise<{
+  objectCount: number;
+  totalBytes: number;
+}> {
+  const rows = await pg<{ size: number }[]>("GET", "objects?select=size");
+  const list = rows ?? [];
+  return {
+    objectCount: list.length,
+    totalBytes: list.reduce((s, r) => s + (r.size ?? 0), 0),
+  };
 }
 
 export async function repoStats(
