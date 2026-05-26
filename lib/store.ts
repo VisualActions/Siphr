@@ -94,6 +94,15 @@ export async function getUser(username: string): Promise<StoredUser | null> {
   return rows?.[0] ? userFromRow(rows[0]) : null;
 }
 
+/** Case-insensitive lookup, used for signup collision check and URL canonicalization. */
+export async function findUserCaseInsensitive(username: string): Promise<StoredUser | null> {
+  const rows = await pg<UserRow[]>(
+    "GET",
+    `users?select=*&username=ilike.${encodeURIComponent(username)}&limit=1`
+  );
+  return rows?.[0] ? userFromRow(rows[0]) : null;
+}
+
 export async function createUser(u: StoredUser): Promise<void> {
   await pg("POST", "users", [
     {

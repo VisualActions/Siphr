@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createUser, getUser } from "@/lib/store";
+import { createUser, findUserCaseInsensitive } from "@/lib/store";
 
 export const runtime = "nodejs";
 
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   const encryptedIdentity = b.encryptedIdentity;
   const fp = typeof b.fingerprint === "string" ? b.fingerprint : "";
 
-  if (!/^[a-z0-9_-]{3,32}$/.test(username)) {
+  if (!/^[A-Za-z0-9_-]{3,32}$/.test(username) || /^-|-$/.test(username)) {
     return NextResponse.json({ error: "invalid username" }, { status: 400 });
   }
   if (!publicKeyJwk || typeof publicKeyJwk !== "object") {
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "missing fingerprint" }, { status: 400 });
   }
 
-  if (await getUser(username)) {
+  if (await findUserCaseInsensitive(username)) {
     return NextResponse.json({ error: "username taken" }, { status: 409 });
   }
 

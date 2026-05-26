@@ -32,8 +32,12 @@ export default function SignupPage() {
       setError("Passphrases don't match.");
       return;
     }
-    if (!/^[a-z0-9_-]{3,32}$/.test(username)) {
-      setError("Username must be 3–32 chars: a-z, 0-9, _, -");
+    if (!/^[A-Za-z0-9_-]{3,32}$/.test(username)) {
+      setError("Username must be 3–32 chars: letters, numbers, _, -");
+      return;
+    }
+    if (/^-|-$/.test(username)) {
+      setError("Username can't start or end with a dash.");
       return;
     }
     setStep("generating");
@@ -95,7 +99,7 @@ export default function SignupPage() {
                   autoComplete="username"
                 />
                 <div className="text-xs text-[color:var(--color-fg-muted)] mt-1">
-                  Lowercase letters, numbers, dashes. 3–32 chars.
+                  Letters, numbers, dashes, underscores. 3–32 chars.
                 </div>
               </div>
               <div>
