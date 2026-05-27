@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "./ThemeProvider";
+import { FingerprintSigil, Pill } from "./Primitives";
 
 type Props = {
   active?: "explore" | "featured" | "security" | "transparency" | "settings" | null;
@@ -49,17 +51,7 @@ export default function TopNav({ active = null }: Props) {
         <span>SIPHR</span>
       </Link>
 
-      <div className="search">
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" style={{ opacity: 0.6 }}>
-          <path d="M10.68 11.74a6 6 0 1 1 1.06-1.06l3.04 3.04a.75.75 0 1 1-1.06 1.06l-3.04-3.04ZM11.5 7a4.5 4.5 0 1 0-9 0 4.5 4.5 0 0 0 9 0Z" />
-        </svg>
-        <span>jump_to —</span>
-        <kbd style={{
-          marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 9.5,
-          opacity: 0.7, padding: "1px 5px",
-          border: "1px solid rgba(255,255,255,0.15)", borderRadius: 2,
-        }}>/</kbd>
-      </div>
+      <SearchBox />
 
       <nav className="navlinks">
         <Link href="/explore" style={{ color: linkColor("explore") }}>explore</Link>
@@ -288,5 +280,281 @@ function SunGlyph() {
       <circle cx="8" cy="8" r="3" />
       <path d="M8 0v2M8 14v2M0 8h2M14 8h2M2.3 2.3l1.4 1.4M12.3 12.3l1.4 1.4M2.3 13.7l1.4-1.4M12.3 3.7l1.4-1.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
+  );
+}
+
+// ============================================================
+// SearchBox — live cross-entity search with `/` shortcut
+// ============================================================
+
+type SearchUser = {
+  username: string;
+  fingerprint: string;
+  verified: boolean;
+  verifiedAs: string | null;
+  verifiedKind: string | null;
+};
+type SearchRepo = {
+  id: string;
+  owner: string;
+  name: string;
+  visibility: "private" | "public";
+  description: string | null;
+  featured: boolean;
+};
+type SearchResult = { users: SearchUser[]; repos: SearchRepo[] };
+
+function SearchBox() {
+  const router = useRouter();
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const [results, setResults] = useState<SearchResult>({ users: [], repos: [] });
+  const [hl, setHl] = useState(0); // highlighted result index
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+
+  // `/` focuses the input (unless something else has focus)
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "/" && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+      if (e.key === "Escape") {
+        setOpen(false);
+        inputRef.current?.blur();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Close on outside click
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  // Debounced fetch
+  useEffect(() => {
+    if (!q.trim()) {
+      setResults({ users: [], repos: [] });
+      return;
+    }
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      fetch(`/api/search?q=${encodeURIComponent(q.trim())}`, { signal: ctrl.signal })
+        .then((r) => r.ok ? r.json() : { users: [], repos: [] })
+        .then((j: SearchResult) => {
+          setResults(j);
+          setHl(0);
+        })
+        .catch(() => {});
+    }, 180);
+    return () => { clearTimeout(t); ctrl.abort(); };
+  }, [q]);
+
+  const flat: { kind: "user" | "repo"; ref: SearchUser | SearchRepo }[] = [
+    ...results.users.map((u) => ({ kind: "user" as const, ref: u })),
+    ...results.repos.map((r) => ({ kind: "repo" as const, ref: r })),
+  ];
+
+  function go(idx: number) {
+    const item = flat[idx];
+    if (!item) return;
+    if (item.kind === "user") {
+      router.push(`/${(item.ref as SearchUser).username}`);
+    } else {
+      const r = item.ref as SearchRepo;
+      router.push(`/${r.owner}/${r.name}`);
+    }
+    setQ("");
+    setOpen(false);
+    inputRef.current?.blur();
+  }
+
+  return (
+    <div ref={boxRef} className="search" style={{ position: "relative", padding: 0 }}>
+      <svg
+        width="11" height="11" viewBox="0 0 16 16" fill="currentColor"
+        style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", opacity: 0.6, pointerEvents: "none" }}
+      >
+        <path d="M10.68 11.74a6 6 0 1 1 1.06-1.06l3.04 3.04a.75.75 0 1 1-1.06 1.06l-3.04-3.04ZM11.5 7a4.5 4.5 0 1 0-9 0 4.5 4.5 0 0 0 9 0Z" />
+      </svg>
+      <input
+        ref={inputRef}
+        value={q}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") { e.preventDefault(); setHl((h) => Math.min(h + 1, flat.length - 1)); }
+          if (e.key === "ArrowUp") { e.preventDefault(); setHl((h) => Math.max(h - 1, 0)); }
+          if (e.key === "Enter") { e.preventDefault(); go(hl); }
+        }}
+        placeholder="jump to user or repo —"
+        spellCheck={false}
+        autoComplete="off"
+        style={{
+          flex: 1, height: "100%", padding: "0 32px 0 30px",
+          background: "transparent", border: 0, outline: "none",
+          color: "#fff", fontFamily: "var(--mono)", fontSize: 11.5,
+          letterSpacing: 0,
+        }}
+      />
+      <kbd style={{
+        position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+        fontFamily: "var(--mono)", fontSize: 9.5, opacity: 0.7,
+        padding: "1px 5px", border: "1px solid rgba(255,255,255,0.15)",
+        borderRadius: 2, pointerEvents: "none",
+      }}>/</kbd>
+
+      {open && (q.trim().length > 0) && (
+        <SearchDropdown q={q} results={results} hl={hl} setHl={setHl} go={go} />
+      )}
+    </div>
+  );
+}
+
+function SearchDropdown({
+  q, results, hl, setHl, go,
+}: {
+  q: string; results: SearchResult;
+  hl: number; setHl: (h: number) => void;
+  go: (i: number) => void;
+}) {
+  const total = results.users.length + results.repos.length;
+  return (
+    <div
+      style={{
+        position: "absolute", left: 0, right: 0, top: "calc(100% + 6px)",
+        background: "var(--panel)", color: "var(--ink)",
+        border: "1px solid var(--line)", borderRadius: "var(--r-md)",
+        boxShadow: "0 12px 32px -16px rgba(0,0,0,0.6)",
+        zIndex: 40, padding: "4px 0", minWidth: 380,
+      }}
+    >
+      {total === 0 ? (
+        <div style={{
+          padding: "16px 14px", fontFamily: "var(--mono)", fontSize: 12,
+          color: "var(--muted)", textAlign: "center",
+        }}>
+          no matches for &ldquo;{q}&rdquo;
+        </div>
+      ) : (
+        <>
+          {results.users.length > 0 && (
+            <>
+              <div style={{
+                padding: "6px 14px", fontFamily: "var(--mono)", fontSize: 10.5,
+                color: "var(--muted)", letterSpacing: "0.1em",
+                textTransform: "uppercase",
+              }}>
+                USERS · {results.users.length}
+              </div>
+              {results.users.map((u, i) => (
+                <SearchRow
+                  key={`u-${u.username}`}
+                  active={hl === i}
+                  onHover={() => setHl(i)}
+                  onClick={() => go(i)}
+                >
+                  <FingerprintSigil seed={`${u.username}@siphr ${u.fingerprint}`} size={22} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 13 }}>
+                      {u.username}
+                      {u.verified && (
+                        <span style={{
+                          marginLeft: 8, fontFamily: "var(--mono)", fontSize: 10,
+                          color: "var(--mint)",
+                        }}>✓ verified</span>
+                      )}
+                    </div>
+                    <div style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--muted)" }}>
+                      fp {u.fingerprint.slice(0, 16)}…
+                    </div>
+                  </div>
+                </SearchRow>
+              ))}
+            </>
+          )}
+          {results.repos.length > 0 && (
+            <>
+              <div style={{
+                padding: "6px 14px", marginTop: results.users.length > 0 ? 4 : 0,
+                fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--muted)",
+                letterSpacing: "0.1em", textTransform: "uppercase",
+                borderTop: results.users.length > 0 ? "1px solid var(--line-2)" : undefined,
+                paddingTop: results.users.length > 0 ? 8 : 6,
+              }}>
+                REPOS · {results.repos.length}
+              </div>
+              {results.repos.map((r, i) => {
+                const idx = results.users.length + i;
+                return (
+                  <SearchRow
+                    key={`r-${r.id}`}
+                    active={hl === idx}
+                    onHover={() => setHl(idx)}
+                    onClick={() => go(idx)}
+                  >
+                    <FingerprintSigil seed={`${r.owner}/${r.name} ${r.id.slice(0, 6)}`} size={22} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
+                        <span><span style={{ color: "var(--muted)" }}>{r.owner}/</span>{r.name}</span>
+                        {r.featured && <Pill>★ featured</Pill>}
+                        <Pill variant="public">public</Pill>
+                      </div>
+                      {r.description && (
+                        <div style={{
+                          fontSize: 11.5, color: "var(--muted)",
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>{r.description}</div>
+                      )}
+                    </div>
+                  </SearchRow>
+                );
+              })}
+            </>
+          )}
+        </>
+      )}
+      <div style={{
+        padding: "6px 14px", borderTop: "1px solid var(--line-2)",
+        fontFamily: "var(--mono)", fontSize: 10, color: "var(--muted-2)",
+        letterSpacing: "0.06em",
+      }}>
+        ↳ press <kbd style={{ fontFamily: "inherit", color: "var(--ink)" }}>↑↓</kbd> to navigate · <kbd style={{ fontFamily: "inherit", color: "var(--ink)" }}>enter</kbd> to open · <kbd style={{ fontFamily: "inherit", color: "var(--ink)" }}>esc</kbd> to close
+      </div>
+    </div>
+  );
+}
+
+function SearchRow({
+  active, onHover, onClick, children,
+}: {
+  active: boolean; onHover: () => void;
+  onClick: () => void; children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={onHover}
+      style={{
+        width: "100%", textAlign: "left",
+        display: "flex", alignItems: "center", gap: 10,
+        padding: "8px 14px",
+        background: active ? "var(--panel-2)" : "transparent",
+        color: "var(--ink)",
+        border: 0, cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
   );
 }

@@ -10,7 +10,6 @@ import {
   FingerprintSigil,
   Pill,
   Dot,
-  Tabs,
   LockGlyph,
   ServerView,
 } from "@/components/Primitives";
@@ -40,6 +39,9 @@ export default function RepoPage({
   const [user, setUser] = useState<string | null>(null);
   const [hasKey, setHasKey] = useState(false);
   const [readme, setReadme] = useState<string | null>(null);
+  const [tab, setTab] = useState<"code" | "issues" | "pulls" | "keys" | "audit" | "settings">("code");
+  const [watch, setWatch] = useState<{ watched: boolean; count: number }>({ watched: false, count: 0 });
+  const [clonedCopied, setClonedCopied] = useState(false);
 
   useEffect(() => {
     setUser(localStorage.getItem("siphr:current_user"));
@@ -53,6 +55,39 @@ export default function RepoPage({
       })
       .then((j) => j && setInfo(j));
   }, [owner, name]);
+
+  // Watch state — repo info needed for repo id
+  useEffect(() => {
+    if (!info) return;
+    const q = user ? `?user=${encodeURIComponent(user)}` : "";
+    fetch(`/api/repos/${info.id}/watch${q}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => j && setWatch(j))
+      .catch(() => {});
+  }, [info, user]);
+
+  async function toggleWatch() {
+    if (!info || !user) return;
+    const method = watch.watched ? "DELETE" : "POST";
+    const r = await fetch(`/api/repos/${info.id}/watch?user=${encodeURIComponent(user)}`, { method });
+    if (r.ok) {
+      setWatch((w) => ({
+        watched: !w.watched,
+        count: w.count + (w.watched ? -1 : 1),
+      }));
+    }
+  }
+
+  function copyClone() {
+    if (!info) return;
+    const url = typeof window !== "undefined"
+      ? `${window.location.origin}/${info.owner}/${info.name}.git`
+      : `https://siphr.dev/${info.owner}/${info.name}.git`;
+    navigator.clipboard.writeText(url).then(() => {
+      setClonedCopied(true);
+      setTimeout(() => setClonedCopied(false), 1500);
+    }).catch(() => {});
+  }
 
   useEffect(() => {
     if (!info) return;
@@ -124,22 +159,35 @@ export default function RepoPage({
                 </Pill>
               )}
               <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-                <button className="btn ghost sm">↑ Watch</button>
-                <button className="btn ghost sm">⌥ Fork</button>
-                <button className="btn sm">⌃ Clone</button>
+                <button
+                  type="button"
+                  onClick={toggleWatch}
+                  disabled={!user}
+                  title={user ? "" : "sign in to watch"}
+                  className="btn ghost sm"
+                  style={{
+                    color: watch.watched ? "var(--phosphor)" : undefined,
+                    borderColor: watch.watched ? "var(--phosphor)" : undefined,
+                  }}
+                >
+                  {watch.watched ? "★" : "☆"} {watch.watched ? "Watching" : "Watch"} · {watch.count}
+                </button>
+                <button
+                  type="button"
+                  onClick={copyClone}
+                  className="btn sm"
+                >
+                  {clonedCopied ? "✓ copied" : "⌃ Clone URL"}
+                </button>
               </div>
             </div>
             <div style={{ marginTop: 18 }}>
-              <Tabs
-                active="code"
-                items={[
-                  { key: "code", label: "code" },
-                  { key: "issues", label: "issues", count: 0 },
-                  { key: "pulls", label: "pull requests", count: 0 },
-                  { key: "keys", label: "keys", dot: !isPublic },
-                  { key: "audit", label: "audit log" },
-                  ...(isOwner ? [{ key: "settings", label: "settings" }] : []),
-                ]}
+              <RepoTabStrip
+                active={tab}
+                onChange={setTab}
+                isOwner={isOwner}
+                isPrivate={!isPublic}
+                collabCount={info.collaborators.length}
               />
             </div>
           </div>
@@ -152,6 +200,16 @@ export default function RepoPage({
         }}>
           {/* MAIN COLUMN ----------------------------------------- */}
           <section>
+            {tab !== "code" && (
+              <TabPanel
+                tab={tab}
+                info={info}
+                isOwner={isOwner}
+                isPublic={isPublic}
+              />
+            )}
+            {tab === "code" && (
+              <>
             {/* branch row */}
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
               <button className="btn ghost sm" style={{ fontFamily: "var(--mono)" }}>
@@ -269,6 +327,8 @@ export default function RepoPage({
                   <Markdown text={readme} />
                 </div>
               </div>
+            )}
+              </>
             )}
           </section>
 
@@ -501,4 +561,197 @@ function renderInline(s: string): React.ReactNode {
     rest = rest.slice(earliest.index! + earliest[0].length);
   }
   return parts;
+}
+
+// ============================================================
+// Tab strip + panels
+// ============================================================
+
+type TabKey = "code" | "issues" | "pulls" | "keys" | "audit" | "settings";
+
+function RepoTabStrip({
+  active, onChange, isOwner, isPrivate, collabCount,
+}: {
+  active: TabKey;
+  onChange: (t: TabKey) => void;
+  isOwner: boolean;
+  isPrivate: boolean;
+  collabCount: number;
+}) {
+  const items: { key: TabKey; label: string; count?: number; dot?: boolean }[] = [
+    { key: "code", label: "code" },
+    { key: "issues", label: "issues", count: 0 },
+    { key: "pulls", label: "pull requests", count: 0 },
+    { key: "keys", label: "keys", count: collabCount, dot: isPrivate },
+    { key: "audit", label: "audit" },
+    ...(isOwner ? [{ key: "settings" as TabKey, label: "settings" }] : []),
+  ];
+  return (
+    <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--line)" }}>
+      {items.map((it) => {
+        const isActive = it.key === active;
+        return (
+          <button
+            type="button"
+            key={it.key}
+            onClick={() => onChange(it.key)}
+            style={{
+              padding: "10px 16px",
+              fontFamily: "var(--mono)", fontSize: 11.5,
+              letterSpacing: "0.06em", textTransform: "uppercase",
+              color: isActive ? "var(--ink)" : "var(--muted)",
+              borderBottom: isActive ? "2px solid var(--phosphor)" : "2px solid transparent",
+              marginBottom: -1,
+              background: "transparent", border: 0,
+              borderRadius: 0, cursor: "pointer",
+              display: "inline-flex", alignItems: "center", gap: 8,
+            }}
+          >
+            <span>{it.label}</span>
+            {it.count !== undefined && (
+              <span style={{
+                background: isActive ? "var(--phosphor-bg)" : "var(--panel-2)",
+                color: isActive ? "var(--phosphor)" : "var(--muted)",
+                padding: "1px 7px", borderRadius: 2, fontSize: 10,
+                fontFamily: "var(--mono)",
+              }}>{it.count}</span>
+            )}
+            {it.dot && <span style={{ width: 6, height: 6, borderRadius: 999, background: "var(--phosphor)" }} />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function TabPanel({
+  tab, info, isOwner, isPublic,
+}: {
+  tab: Exclude<TabKey, "code">;
+  info: RepoInfo;
+  isOwner: boolean;
+  isPublic: boolean;
+}) {
+  if (tab === "issues" || tab === "pulls") {
+    return (
+      <EmptyPanel
+        title={tab === "issues" ? "Issues" : "Pull requests"}
+        body={
+          tab === "issues"
+            ? "Issue threads with end-to-end encrypted bodies ship in v0.5 — see /roadmap. Each thread will have its own sub-key wrapped to the repo collaborators."
+            : "Pull requests with encrypted diffs and conversations ship in v0.5 — see /roadmap. Per-PR sub-keys, signed commits via Ed25519."
+        }
+        eta="v0.5 — Q3 2026"
+      />
+    );
+  }
+  if (tab === "keys") {
+    return <KeysPanel info={info} isOwner={isOwner} isPublic={isPublic} />;
+  }
+  if (tab === "audit") {
+    return <AuditPanel info={info} />;
+  }
+  if (tab === "settings") {
+    return <RepoSettingsPanel info={info} isOwner={isOwner} />;
+  }
+  return null;
+}
+
+function EmptyPanel({
+  title, body, eta,
+}: { title: string; body: string; eta?: string }) {
+  return (
+    <div className="card" style={{ padding: "36px 28px", textAlign: "center" }}>
+      <h2 className="display" style={{ fontSize: 28 }}>{title}</h2>
+      <p style={{ marginTop: 10, fontSize: 14, color: "var(--ink-2)", maxWidth: 560, margin: "10px auto 0", lineHeight: 1.6 }}>
+        {body}
+      </p>
+      {eta && (
+        <div style={{ marginTop: 16 }}>
+          <span className="pill" style={{ color: "var(--amber)", borderColor: "rgba(240,192,96,0.35)", background: "var(--amber-bg)" }}>
+            planned · {eta}
+          </span>
+        </div>
+      )}
+      <Link href="/roadmap" className="btn ghost sm" style={{ marginTop: 22, display: "inline-flex" }}>
+        view roadmap →
+      </Link>
+    </div>
+  );
+}
+
+function KeysPanel({
+  info, isOwner, isPublic,
+}: { info: RepoInfo; isOwner: boolean; isPublic: boolean }) {
+  return (
+    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--line-2)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div className="eyebrow">↳ keys that can decrypt</div>
+        {isOwner && !isPublic && (
+          <button type="button" className="btn ghost xs" disabled title="invite-by-fingerprint ships in v0.5">
+            + invite
+          </button>
+        )}
+      </div>
+      {info.collaborators.length === 0 ? (
+        <div style={{ padding: "20px 18px", fontFamily: "var(--mono)", fontSize: 12, color: "var(--muted)" }}>
+          {isPublic ? "public · no key needed" : "no collaborators wrapped"}
+        </div>
+      ) : (
+        info.collaborators.map((c, i) => (
+          <Collab
+            key={c}
+            name={c}
+            seed={`collab ${c}`}
+            role={c === info.owner ? "owner" : "collaborator"}
+            last={i === info.collaborators.length - 1}
+          />
+        ))
+      )}
+      <div style={{ padding: "12px 18px", borderTop: "1px solid var(--line-2)", fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>
+        ↳ collaborator key wrapping ships in v0.5 — see <Link href="/roadmap" style={{ color: "var(--phosphor)" }}>/roadmap</Link>
+      </div>
+    </div>
+  );
+}
+
+function AuditPanel({ info }: { info: RepoInfo }) {
+  return (
+    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--line-2)" }}>
+        <div className="eyebrow">↳ ref-update history · what siphr.dev observed</div>
+      </div>
+      <div style={{ padding: "14px 18px", fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.85 }}>
+        <div>↳ repo created · {new Date(info.createdAt).toLocaleString()}</div>
+        {info.head && <div>↳ HEAD → {info.head.slice(0, 12)}…</div>}
+        <div>↳ objects on server · {info.objectCount.toLocaleString()}</div>
+        <div>↳ ciphertext at rest · {(info.cipherBytes / 1024).toFixed(1)} KB</div>
+      </div>
+      <div style={{ padding: "12px 18px", borderTop: "1px solid var(--line-2)", fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>
+        ↳ a richer per-commit audit log (signing key, rotation events) ships with v0.5–v0.7
+      </div>
+    </div>
+  );
+}
+
+function RepoSettingsPanel({ info, isOwner }: { info: RepoInfo; isOwner: boolean }) {
+  if (!isOwner) {
+    return <EmptyPanel title="Settings" body="Only the repo owner can change settings." />;
+  }
+  return (
+    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--line-2)" }}>
+        <div className="eyebrow">↳ repository settings · {info.owner}/{info.name}</div>
+      </div>
+      <div style={{ padding: "14px 18px", fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.85 }}>
+        <div>↳ visibility · {info.visibility}</div>
+        <div>↳ default branch · {info.defaultBranch}</div>
+        <div>↳ created · {new Date(info.createdAt).toLocaleDateString()}</div>
+        <div>↳ description · {info.description ?? "(none)"}</div>
+      </div>
+      <div style={{ padding: "12px 18px", borderTop: "1px solid var(--line-2)", fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>
+        ↳ rename · transfer ownership · delete · ship in v0.5
+      </div>
+    </div>
+  );
 }

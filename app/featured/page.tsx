@@ -5,6 +5,7 @@ import {
   CipherStrip,
   Pill,
 } from "@/components/Primitives";
+import FeaturedFilter, { type FeaturedRepo } from "@/components/FeaturedFilter";
 import { listFeaturedRepos } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -14,26 +15,6 @@ export const metadata = {
   description: "Landmark codebases that mirror to Siphr for the parts that don't belong in plaintext.",
 };
 
-type FeaturedRepo = {
-  id: string;
-  owner: string;
-  name: string;
-  visibility: "private" | "public";
-  description: string | null;
-  featuredTag: string | null;
-  featuredBlurb: string | null;
-  featuredAt: string | null;
-};
-
-const CATEGORIES = [
-  { label: "all" },
-  { label: "operating systems" },
-  { label: "game engines" },
-  { label: "languages & compilers" },
-  { label: "browsers" },
-  { label: "security research" },
-  { label: "scientific" },
-];
 
 export default async function FeaturedPage() {
   let featured: FeaturedRepo[] = [];
@@ -54,8 +35,6 @@ export default async function FeaturedPage() {
   }
 
   const hero = featured[0] ?? null;
-  const rest = featured.slice(1);
-  const counts = countByTag(featured);
 
   return (
     <>
@@ -94,24 +73,6 @@ export default async function FeaturedPage() {
             </div>
           </div>
 
-          {/* Category strip */}
-          <div style={{ marginTop: 36, display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap" }}>
-            {CATEGORIES.map((c, i) => {
-              const active = i === 0;
-              const count = c.label === "all" ? featured.length : (counts[c.label] ?? 0);
-              return (
-                <span key={c.label} style={{
-                  fontFamily: "var(--mono)", fontSize: 12,
-                  color: active ? "var(--copper)" : "var(--muted)",
-                  borderBottom: active ? "2px solid var(--copper)" : "2px solid transparent",
-                  paddingBottom: 6, display: "inline-flex", gap: 6,
-                }}>
-                  {c.label}
-                  <span style={{ color: "var(--muted-2)" }}>· {count}</span>
-                </span>
-              );
-            })}
-          </div>
         </section>
 
         {/* HERO FEATURE (real or editorial placeholder) ----------- */}
@@ -119,19 +80,19 @@ export default async function FeaturedPage() {
           {hero ? <RealHero hero={hero} /> : <EditorialHero />}
         </section>
 
-        {/* GRID -------------------------------------------------- */}
+        {/* INTERACTIVE GRID (client-side category filter) -------- */}
         <section style={{ padding: "0 6vw 56px", maxWidth: 1280, margin: "0 auto" }}>
-          <div className="eyebrow" style={{ marginBottom: 18 }}>
-            ↳ {rest.length > 0 ? "also featured · landmark codebases" : "examples of what could be featured here"}
-          </div>
-          {rest.length > 0 ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
-              {rest.map((r) => <RealFeaturedCard key={r.id} r={r} />)}
-            </div>
+          {featured.length > 0 ? (
+            <FeaturedFilter featured={featured} />
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
-              {PLACEHOLDER_CARDS.map((p) => <PlaceholderCard key={p.org + p.name} {...p} />)}
-            </div>
+            <>
+              <div className="eyebrow" style={{ marginBottom: 18 }}>
+                ↳ examples of what could be featured here
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+                {PLACEHOLDER_CARDS.map((p) => <PlaceholderCard key={p.org + p.name} {...p} />)}
+              </div>
+            </>
           )}
         </section>
 
@@ -185,15 +146,6 @@ export default async function FeaturedPage() {
       </main>
     </>
   );
-}
-
-function countByTag(repos: FeaturedRepo[]): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const r of repos) {
-    if (!r.featuredTag) continue;
-    out[r.featuredTag] = (out[r.featuredTag] ?? 0) + 1;
-  }
-  return out;
 }
 
 // ============================================================
@@ -356,47 +308,6 @@ function EditorialHero() {
         </div>
       </div>
     </div>
-  );
-}
-
-function RealFeaturedCard({ r }: { r: FeaturedRepo }) {
-  const seed = `${r.owner}/${r.name} ${r.id.slice(0, 8)}`;
-  return (
-    <Link href={`/${r.owner}/${r.name}`} className="card" style={{
-      padding: "20px 20px 16px", display: "flex", flexDirection: "column",
-      gap: 14, position: "relative",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <FingerprintSigil seed={seed} size={36} />
-        <div style={{ minWidth: 0 }}>
-          {r.featuredTag && (
-            <div style={{
-              fontFamily: "var(--mono)", fontSize: 10, color: "var(--muted)",
-              letterSpacing: "0.06em", textTransform: "uppercase",
-            }}>{r.featuredTag}</div>
-          )}
-          <div style={{ fontSize: 14, fontWeight: 500 }}>
-            <span style={{ color: "var(--muted)" }}>{r.owner}/</span>{r.name}
-          </div>
-        </div>
-      </div>
-      <p style={{
-        fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.55,
-        minHeight: 80, margin: 0,
-      }}>
-        {r.featuredBlurb || r.description || "Featured on Siphr."}
-      </p>
-      <div style={{
-        fontFamily: "var(--mono)", fontSize: 10, color: "var(--muted)",
-        display: "flex", justifyContent: "space-between",
-        paddingTop: 12, borderTop: "1px dashed var(--line)",
-      }}>
-        <span>↳ featured {r.featuredAt ? new Date(r.featuredAt).toLocaleDateString() : ""}</span>
-        <Pill variant={r.visibility === "private" ? "encrypted" : "public"}>
-          {r.visibility === "private" ? "e2ee" : "public"}
-        </Pill>
-      </div>
-    </Link>
   );
 }
 
