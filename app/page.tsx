@@ -125,7 +125,7 @@ export default function HomePage() {
             </p>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr auto 1fr", alignItems: "stretch", gap: 0 }}>
-              <div className="card" style={{ padding: "22px 22px 18px", background: "#fffdf7" }}>
+              <div className="card" style={{ padding: "22px 22px 18px", background: "var(--panel)" }}>
                 <div className="eyebrow" style={{ marginBottom: 18 }}>box 1 — you</div>
                 <h3 className="serif" style={{ fontSize: 26, marginBottom: 10 }}>Your machine</h3>
                 <ul style={{ listStyle: "none", padding: 0, margin: 0, fontSize: 13, lineHeight: 1.7, color: "var(--ink-2)" }}>
@@ -140,7 +140,7 @@ export default function HomePage() {
 
               <Arrow label="encrypt" />
 
-              <div className="card" style={{ padding: "22px 22px 18px", background: "#fffdf7" }}>
+              <div className="card" style={{ padding: "22px 22px 18px", background: "var(--panel)" }}>
                 <div className="eyebrow" style={{ marginBottom: 18 }}>box 2 — the wire</div>
                 <h3 className="serif" style={{ fontSize: 26, marginBottom: 10 }}>Ciphertext in flight</h3>
                 <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)", lineHeight: 1.7, wordBreak: "break-all" }}>

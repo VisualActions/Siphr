@@ -209,7 +209,7 @@ export default function NewRepoPage() {
                   marginTop: 8, height: 38, display: "flex", alignItems: "center",
                   gap: 8, padding: "0 32px 0 10px", position: "relative",
                   border: "1px solid var(--line)", borderRadius: 5,
-                  background: "#fffdf7", fontSize: 13,
+                  background: "var(--panel)", fontSize: 13,
                 }}>
                   {user && <FingerprintSigil seed={`${user}@siphr ${pubFp ?? ""}`} size={20} />}
                   <span style={{ fontWeight: 500 }}>{user ?? "you"}</span>
@@ -260,7 +260,7 @@ export default function NewRepoPage() {
                   marginTop: 8, width: "100%",
                   border: "1px solid var(--line)", borderRadius: 5,
                   padding: "10px 14px", fontFamily: "var(--sans)", fontSize: 14,
-                  background: "#fffdf7", resize: "vertical",
+                  background: "var(--panel)", resize: "vertical",
                 }}
               />
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
@@ -304,7 +304,7 @@ export default function NewRepoPage() {
                         onChange={(e) => setKeyMode(e.target.value as "generate" | "paste")}
                         style={{
                           minWidth: 240, height: 32, padding: "0 30px 0 12px",
-                          background: "#fffdf7", border: "1px solid var(--line)",
+                          background: "var(--panel)", border: "1px solid var(--line)",
                           borderRadius: 5, fontFamily: "var(--mono)", fontSize: 12,
                         }}
                       >
@@ -362,7 +362,7 @@ export default function NewRepoPage() {
                         onChange={(e) => setRotation(e.target.value as "30d" | "90d" | "180d" | "never")}
                         style={{
                           minWidth: 200, height: 32, padding: "0 30px 0 12px",
-                          background: "#fffdf7", border: "1px solid var(--line)",
+                          background: "var(--panel)", border: "1px solid var(--line)",
                           borderRadius: 5, fontFamily: "var(--mono)", fontSize: 12,
                         }}
                       >
@@ -419,7 +419,7 @@ export default function NewRepoPage() {
                     onChange={(e) => setGitignore(e.target.value)}
                     style={{
                       minWidth: 180, height: 32, padding: "0 30px 0 12px",
-                      background: "#fffdf7", border: "1px solid var(--line)",
+                      background: "var(--panel)", border: "1px solid var(--line)",
                       borderRadius: 5, fontFamily: "var(--mono)", fontSize: 12,
                     }}
                   >
@@ -440,7 +440,7 @@ export default function NewRepoPage() {
                     onChange={(e) => setLicense(e.target.value)}
                     style={{
                       minWidth: 180, height: 32, padding: "0 30px 0 12px",
-                      background: "#fffdf7", border: "1px solid var(--line)",
+                      background: "var(--panel)", border: "1px solid var(--line)",
                       borderRadius: 5, fontFamily: "var(--mono)", fontSize: 12,
                     }}
                   >
@@ -620,7 +620,7 @@ function Switch({ on, onClick }: { on: boolean; onClick?: () => void }) {
     >
       <span style={{
         position: "absolute", top: 2, left: on ? 18 : 2,
-        width: 18, height: 18, borderRadius: 999, background: "#fffdf7",
+        width: 18, height: 18, borderRadius: 999, background: "var(--panel)",
         transition: "left 0.12s",
       }} />
     </button>

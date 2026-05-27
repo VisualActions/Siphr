@@ -207,7 +207,7 @@ function RealHero({ hero }: { hero: FeaturedRepo }) {
   return (
     <div className="card" style={{
       padding: 0, overflow: "hidden",
-      background: "#fffdf7", border: "1px solid var(--ink)",
+      background: "var(--panel)", border: "1px solid var(--ink)",
     }}>
       <div style={{ display: "grid", gridTemplateColumns: "1.15fr 1fr" }}>
         <div style={{ padding: "40px 44px 36px" }}>
@@ -281,7 +281,7 @@ function EditorialHero() {
   return (
     <div className="card" style={{
       padding: 0, overflow: "hidden",
-      background: "#fffdf7", border: "1px solid var(--ink)",
+      background: "var(--panel)", border: "1px solid var(--ink)",
     }}>
       <div style={{ display: "grid", gridTemplateColumns: "1.15fr 1fr" }}>
         <div style={{ padding: "40px 44px 36px" }}>

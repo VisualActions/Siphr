@@ -121,7 +121,7 @@ export default function SigninPage() {
           <div style={{
             marginTop: 14, padding: "14px 16px",
             textAlign: "center", fontSize: 13,
-            border: "1px solid var(--line)", borderRadius: 6, background: "#fffdf7",
+            border: "1px solid var(--line)", borderRadius: 6, background: "var(--panel)",
           }}>
             New to Siphr? <Link href="/signup" style={{ color: "var(--copper)", fontWeight: 500 }}>create an account →</Link>
           </div>

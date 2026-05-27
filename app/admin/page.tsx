@@ -823,8 +823,8 @@ function SiphrMark({ size = 22 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 22 22" fill="none" aria-hidden>
       <rect x="1.5" y="1.5" width="19" height="19" rx="4" fill="#b25927" />
-      <path d="M6.5 11 L9.5 14 L15.5 8" stroke="#fffdf7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="11" cy="11" r="6.5" stroke="#fffdf7" strokeOpacity="0.35" strokeWidth="1" strokeDasharray="2 2" />
+      <path d="M6.5 11 L9.5 14 L15.5 8" stroke="var(--panel)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="11" cy="11" r="6.5" stroke="var(--panel)" strokeOpacity="0.35" strokeWidth="1" strokeDasharray="2 2" />
     </svg>
   );
 }
