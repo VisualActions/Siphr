@@ -7,7 +7,10 @@ type Params = { params: Promise<{ owner: string; name: string }> };
 
 export async function GET(_req: Request, { params }: Params) {
   const { owner, name } = await params;
-  const repo = await getRepoByName(owner, name);
+  // Accept both `name` and `name.git` so the URL someone shares with `git clone`
+  // also works in a browser address bar.
+  const cleanName = name.replace(/\.git$/, "");
+  const repo = await getRepoByName(owner, cleanName);
   if (!repo) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }

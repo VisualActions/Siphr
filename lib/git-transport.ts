@@ -27,16 +27,15 @@ import { concat, pkt, readPktLines, FLUSH } from "./pkt";
 
 const enc = new TextEncoder();
 
+// Only advertise what we actually implement on the server side.
+// Anything else (side-band-64k, multi_ack, shallow, etc.) would cause the
+// client to expect framing/negotiation we don't speak — see the "bad band"
+// protocol error we hit during early testing.
 const CAPS_ADV = [
-  "multi_ack",
-  "thin-pack",
-  "side-band-64k",
-  "ofs-delta",
-  "shallow",
-  "no-progress",
-  "include-tag",
   "report-status",
   "delete-refs",
+  "ofs-delta",
+  "no-thin",
   "agent=siphr/0.3",
 ];
 
