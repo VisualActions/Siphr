@@ -32,7 +32,10 @@ export async function POST(req: Request) {
       ? (b.wrappedKeys as Record<string, unknown>)
       : {};
 
-  if (!/^[a-z0-9_-]{3,32}$/.test(owner)) {
+  // Match the signup regex — mixed case, A–Z/a–z/0–9/_/-, no leading or
+  // trailing dash. Previously this was lowercase-only, which silently broke
+  // repo creation for every account with a capital letter in their handle.
+  if (!/^[A-Za-z0-9_-]{3,32}$/.test(owner) || /^-|-$/.test(owner)) {
     return NextResponse.json({ error: "invalid owner" }, { status: 400 });
   }
   if (!/^[a-zA-Z0-9_.-]{1,64}$/.test(name)) {
