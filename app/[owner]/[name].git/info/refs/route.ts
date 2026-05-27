@@ -1,19 +1,25 @@
 import { getRepoByName } from "@/lib/store";
+import {
+  buildAdvertisement,
+  CT_ADVERTISEMENT,
+} from "@/lib/git-transport";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 type Params = { params: Promise<{ owner: string; name: string }> };
 
 /**
  * Smart-HTTP discovery endpoint.
  *
- * For PRIVATE repos we deliberately return 403 with the exact body documented
- * in the Quick Setup artboard (path 03). The server cannot encrypt a packfile
+ * Public repos: real pkt-line ref advertisement so `git clone` / `git push`
+ * handshake works.
+ *
+ * Private repos: 403 with policy text. The server cannot encrypt a packfile
  * without the user's repo key, so accepting plaintext objects would leak them.
  *
- * Tested invariant: for private repos, this response body and headers contain
- * zero user-content plaintext (no repo names, no commit messages, no file
- * contents). All we expose is the policy text + the repo's existence.
+ * Invariant: response body for private repos is the literal policy string —
+ * no repo names, commit messages, or filenames are ever included.
  */
 export async function GET(req: Request, { params }: Params) {
   const { owner, name } = await params;
@@ -37,27 +43,32 @@ export async function GET(req: Request, { params }: Params) {
       }
     );
   }
-  // Public path is not yet a real smart-HTTP server — direct clients to /roadmap.
+
   const url = new URL(req.url);
-  const service = url.searchParams.get("service") ?? "";
-  return new Response(
-    `# siphr ${owner}/${cleanName}\n` +
-      `# smart-HTTP transport is shipping in v0.2 (see /roadmap)\n` +
-      `# requested service: ${service}\n` +
-      `# until then: use the in-browser editor at ${url.origin}/${owner}/${cleanName}\n`,
-    {
-      status: 501,
-      headers: {
-        "content-type": "text/plain",
-        "x-siphr-transport": "browser-first",
-      },
-    }
-  );
+  const service = url.searchParams.get("service");
+  if (service !== "git-upload-pack" && service !== "git-receive-pack") {
+    return new Response(
+      "only smart-HTTP is supported · pass ?service=git-upload-pack or git-receive-pack\n",
+      {
+        status: 400,
+        headers: { "content-type": "text/plain" },
+      }
+    );
+  }
+
+  const body = await buildAdvertisement(service, repo);
+  return new Response(body as unknown as BodyInit, {
+    status: 200,
+    headers: {
+      "content-type": CT_ADVERTISEMENT(service),
+      "cache-control": "no-cache, max-age=0, must-revalidate",
+    },
+  });
 }
 
 export async function POST() {
-  return new Response("smart-HTTP service not yet implemented · see /roadmap\n", {
-    status: 501,
+  return new Response("smart-HTTP /info/refs is GET only\n", {
+    status: 405,
     headers: { "content-type": "text/plain" },
   });
 }
