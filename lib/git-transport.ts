@@ -11,8 +11,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
-import zlib from "node:zlib";
 import os from "node:os";
 import git from "isomorphic-git";
 import {
@@ -24,8 +22,7 @@ import {
   type StoredRef,
 } from "./store";
 import { concat, pkt, readPktLines, FLUSH } from "./pkt";
-
-const enc = new TextEncoder();
+import { parsePack, serializeLooseObject } from "./pack-parse";
 
 // Only advertise what we actually implement on the server side.
 // Anything else (side-band-64k, multi_ack, shallow, etc.) would cause the
@@ -346,41 +343,20 @@ export async function handleReceivePack(
     let unpackedOids: string[] = [];
     if (hasPack && pack.length > 32) {
       try {
-        const packName = `pack-${sha1(pack).slice(0, 40)}.pack`;
-        const packPath = path.join(ws.dir, ".git", "objects", "pack", packName);
-        await fs.promises.writeFile(packPath, pack);
-        const idx = await git.indexPack({
-          fs,
-          dir: ws.dir,
-          filepath: path.join("objects", "pack", packName),
+        // Parse the pack ourselves (see lib/pack-parse.ts). The fallback
+        // through isomorphic-git's indexPack was throwing on real-world
+        // packs from `git push` — this gives us full control.
+        const parsed = await parsePack(Buffer.from(pack), async (oid) => {
+          const existing = await getObject(repo.id, oid);
+          return existing ?? null;
         });
-        unpackedOids = (idx as unknown as { oids: string[] }).oids ?? [];
+        for (const o of parsed) {
+          const deflated = serializeLooseObject(o.type, o.content);
+          await putObject(repo.id, o.oid, deflated);
+          unpackedOids.push(o.oid);
+        }
       } catch (e) {
         unpackStatus = `unpack failed: ${e instanceof Error ? e.message : "unknown"}`;
-      }
-    }
-
-    // Persist each new object as a loose object back to Supabase.
-    if (unpackStatus === "ok") {
-      for (const oid of unpackedOids) {
-        // readObject returns the inflated wrapped data with format:'wrapped'
-        try {
-          const obj = await git.readObject({
-            fs,
-            dir: ws.dir,
-            oid,
-            format: "wrapped",
-          });
-          const wrapped = obj.object as Uint8Array;
-          // Re-deflate to the canonical loose-object byte form before storing.
-          const deflated = zlib.deflateSync(Buffer.from(wrapped));
-          await putObject(repo.id, oid, deflated);
-        } catch (e) {
-          unpackStatus = `unpack failed: object ${oid.slice(0, 7)}: ${
-            e instanceof Error ? e.message : "unknown"
-          }`;
-          break;
-        }
       }
     }
 
@@ -430,14 +406,7 @@ export async function handleReceivePack(
   return concat(out);
 }
 
-function sha1(b: Uint8Array): string {
-  return crypto.createHash("sha1").update(b).digest("hex");
-}
-
 // Export for content-type usage in routes
 export const CT_ADVERTISEMENT = (service: string) =>
   `application/x-${service}-advertisement`;
 export const CT_RESULT = (service: string) => `application/x-${service}-result`;
-
-// Tell next/eslint the unused enc constant is intentional (we may use it later).
-void enc;
