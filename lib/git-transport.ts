@@ -14,10 +14,10 @@ import path from "node:path";
 import os from "node:os";
 import git from "isomorphic-git";
 import {
-  getObject,
+  getRepoObject,
   listRefs,
-  putObject,
   putRef,
+  putRepoObject,
   type StoredRepo,
   type StoredRef,
 } from "./store";
@@ -101,13 +101,13 @@ async function hydrateRefs(dir: string, refs: StoredRef[]): Promise<void> {
 
 type WalkContext = {
   dir: string;
-  repoId: string;
-  cache: Map<string, Buffer>; // hydrated object bytes (zlib-deflated wrapped form)
+  repo: StoredRepo;
+  cache: Map<string, Buffer>; // plaintext zlib-deflated loose-object bytes
 };
 
 async function fetchAndCacheObject(ctx: WalkContext, oid: string): Promise<Buffer | null> {
   if (ctx.cache.has(oid)) return ctx.cache.get(oid)!;
-  const buf = await getObject(ctx.repoId, oid);
+  const buf = await getRepoObject(ctx.repo, oid);
   if (!buf) return null;
   ctx.cache.set(oid, buf);
   await writeLooseObject(ctx.dir, oid, buf);
@@ -260,7 +260,7 @@ export async function handleUploadPack(
     await git.init({ fs, dir: ws.dir, defaultBranch: "main" });
 
     // Walk all reachable objects from the wants
-    const ctx: WalkContext = { dir: ws.dir, repoId: repo.id, cache: new Map() };
+    const ctx: WalkContext = { dir: ws.dir, repo, cache: new Map() };
     const reachable = await walkFromCommits(ctx, wants);
 
     if (reachable.size === 0) {
@@ -333,26 +333,32 @@ export async function handleReceivePack(
     // Materialize the existing object graph that the push descends from so
     // deltas in the new pack can be resolved against it.
     if (existingRefs.length > 0) {
-      const ctx: WalkContext = { dir: ws.dir, repoId: repo.id, cache: new Map() };
+      const ctx: WalkContext = { dir: ws.dir, repo, cache: new Map() };
       const seedOids = updates
         .map((u) => u.oldOid)
         .filter((o) => o && o !== ZERO);
       await walkFromCommits(ctx, seedOids);
     }
 
-    let unpackedOids: string[] = [];
+    const unpackedOids: string[] = [];
     if (hasPack && pack.length > 32) {
       try {
         // Parse the pack ourselves (see lib/pack-parse.ts). The fallback
         // through isomorphic-git's indexPack was throwing on real-world
         // packs from `git push` — this gives us full control.
+        //
+        // parsePack's resolveBase callback needs to return the deflated-loose
+        // bytes of an existing object so the parser can apply a delta against
+        // it. For server-mode repos that means we have to decrypt at this
+        // boundary too (getRepoObject handles that transparently).
         const parsed = await parsePack(Buffer.from(pack), async (oid) => {
-          const existing = await getObject(repo.id, oid);
+          const existing = await getRepoObject(repo, oid);
           return existing ?? null;
         });
         for (const o of parsed) {
           const deflated = serializeLooseObject(o.type, o.content);
-          await putObject(repo.id, o.oid, deflated);
+          // putRepoObject re-encrypts for server-mode repos before storing.
+          await putRepoObject(repo, o.oid, deflated);
           unpackedOids.push(o.oid);
         }
       } catch (e) {

@@ -22,6 +22,10 @@ const NAME_SUGGESTIONS = [
 
 export default function NewRepoPage() {
   const router = useRouter();
+  // `?owner=` lets org pages send the user here with the org pre-selected as
+  // the namespace. Read once on mount via window.location to avoid the
+  // suspense-boundary requirement of useSearchParams during static prerender.
+  const [ownerOverride, setOwnerOverride] = useState<string | null>(null);
   const [user, setUser] = useState<string | null>(null);
   const [pubKey, setPubKey] = useState<JsonWebKey | null>(null);
   const [pubFp, setPubFp] = useState<string | null>(null);
@@ -29,6 +33,9 @@ export default function NewRepoPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<"private" | "public">("private");
+  // 'server' = at-rest, standard `git push` works.
+  // 'e2ee'   = browser-encrypted, requires our custom upload path. Legacy.
+  const [privacyMode, setPrivacyMode] = useState<"server" | "e2ee">("server");
   const [keyMode, setKeyMode] = useState<"generate" | "paste">("generate");
 
   const [encCommits, setEncCommits] = useState(true);
@@ -50,6 +57,8 @@ export default function NewRepoPage() {
   );
 
   useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    setOwnerOverride(sp.get("owner"));
     const u = localStorage.getItem("siphr:current_user");
     setUser(u);
     if (u) {
@@ -95,24 +104,31 @@ export default function NewRepoPage() {
     try {
       if (!user) throw new Error("Not signed in.");
       if (avail !== "yes") throw new Error("Pick an available repository name.");
+      const owner = ownerOverride ?? user;
       let wrappedKeys: Record<string, unknown> = {};
       let repoKey: Uint8Array | null = null;
-      if (visibility === "private") {
+      // Only the legacy E2EE flow needs a browser-side repo key; server-mode
+      // private repos let the server hold a wrapped DEK on the repo row.
+      if (visibility === "private" && privacyMode === "e2ee") {
         if (!pubKey) throw new Error("Could not load your public key.");
         const { generateRepoKey, wrapRepoKey } = await import("@/lib/crypto");
         repoKey = await generateRepoKey();
         const wrapped = await wrapRepoKey(repoKey, pubKey);
         wrappedKeys = { [user]: wrapped };
       }
+      const encryptionMode =
+        visibility === "public" ? "none" : privacyMode;
       const res = await fetch("/api/repos", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          owner: user,
+          owner,
+          actor: user,
           name,
           visibility,
           description: description || null,
           wrappedKeys,
+          encryptionMode,
         }),
       });
       const j = await res.json();
@@ -134,7 +150,7 @@ export default function NewRepoPage() {
           securityMd,
         })
       );
-      router.push(`/${user}/${name}`);
+      router.push(`/${owner}/${name}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed");
       setBusy(false);
@@ -294,6 +310,28 @@ export default function NewRepoPage() {
                 }
               />
               {visibility === "private" && (
+                <>
+                  <BlockRow
+                    title="Privacy mode *"
+                    hint={
+                      privacyMode === "server"
+                        ? "server encrypts at rest with our master key · standard `git push` and `git clone` work"
+                        : "browser encrypts before upload · server never sees plaintext · custom client required"
+                    }
+                    right={
+                      <Segmented
+                        options={[
+                          { label: "Server-managed · git works", value: "server" },
+                          { label: "End-to-end · zero-knowledge", value: "e2ee" },
+                        ]}
+                        value={privacyMode}
+                        onChange={(v) => setPrivacyMode(v as "server" | "e2ee")}
+                      />
+                    }
+                  />
+                </>
+              )}
+              {visibility === "private" && privacyMode === "e2ee" && (
                 <>
                   <BlockRow
                     title="Repo encryption key"
@@ -477,9 +515,11 @@ export default function NewRepoPage() {
             gap: 16, flexWrap: "wrap",
           }}>
             <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>
-              {visibility === "private"
-                ? "↳ pressing create will generate a fresh AES-256 repo key in this browser tab"
-                : "↳ public repos are stored plaintext · no repo key generated"}
+              {visibility === "public"
+                ? "↳ public repos are stored plaintext · no repo key generated"
+                : privacyMode === "server"
+                ? "↳ server will generate a per-repo DEK · wrapped to the master key · standard git push works"
+                : "↳ pressing create will generate a fresh AES-256 repo key in this browser tab"}
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <Link href="/dashboard" className="btn ghost">cancel</Link>

@@ -1,12 +1,23 @@
 /**
  * Server-side persistence backed by Supabase Postgres.
  *
- * The server only persists public material and either:
- *   - public repos: zlib-deflated plaintext git objects
- *   - private repos: AES-256-GCM ciphertext (server holds no key to unwrap)
+ * Object encryption depends on the repo's `encryption_mode`:
+ *   - 'none'   (public)  -> store zlib-deflated plaintext
+ *   - 'server' (private) -> server wraps each object with the repo's DEK
+ *                           (DEK itself is wrapped to SIPHR_MASTER_KEY on the
+ *                           repo row). Server can decrypt; client tooling
+ *                           never sees ciphertext.
+ *   - 'e2ee'   (private) -> client encrypts before upload; server stores
+ *                           opaque ciphertext and cannot decrypt. Legacy
+ *                           flow — new private repos default to 'server'.
  */
 
 import { bytesToHexLiteral, decodeBytea, pg, upsert } from "./supabase";
+import {
+  decryptObjectBytes,
+  encryptObjectBytes,
+  unwrapDekWithMaster,
+} from "./server-crypto";
 
 export type StoredUser = {
   username: string;
@@ -20,6 +31,9 @@ export type StoredUser = {
   verifiedKind?: "org" | "individual" | "bot";
 };
 
+export type EncryptionMode = "none" | "server" | "e2ee";
+export type KeySource = "master" | "byok";
+
 export type StoredRepo = {
   id: string;
   owner: string;
@@ -29,6 +43,10 @@ export type StoredRepo = {
   defaultBranch: string;
   createdAt: string;
   wrappedKeys: Record<string, unknown>;
+  encryptionMode: EncryptionMode;
+  /** Per-repo DEK wrapped with the master key. Only set when encryptionMode='server'. */
+  wrappedDek: Buffer | null;
+  keySource: KeySource;
   featured?: boolean;
   featuredAt?: string | null;
   featuredTag?: string | null;
@@ -55,6 +73,9 @@ type RepoRow = {
   description: string | null;
   default_branch: string;
   wrapped_keys: Record<string, unknown>;
+  encryption_mode: EncryptionMode;
+  wrapped_dek: string | null; // bytea encoded as \x... by PostgREST
+  key_source: KeySource;
   created_at: string;
   featured?: boolean | null;
   featured_at?: string | null;
@@ -86,6 +107,9 @@ function repoFromRow(r: RepoRow): StoredRepo {
     defaultBranch: r.default_branch,
     createdAt: r.created_at,
     wrappedKeys: r.wrapped_keys ?? {},
+    encryptionMode: (r.encryption_mode ?? "none") as EncryptionMode,
+    wrappedDek: r.wrapped_dek ? decodeBytea(r.wrapped_dek) : null,
+    keySource: (r.key_source ?? "master") as KeySource,
     featured: r.featured ?? false,
     featuredAt: r.featured_at ?? null,
     featuredTag: r.featured_tag ?? null,
@@ -183,25 +207,34 @@ export async function reposFor(username: string): Promise<StoredRepo[]> {
   return (owned ?? []).map(repoFromRow);
 }
 
-export async function createRepo(
-  r: Omit<StoredRepo, "id" | "createdAt" | "defaultBranch" | "description"> & {
-    description?: string | null;
-    defaultBranch?: string;
+export async function createRepo(r: {
+  owner: string;
+  name: string;
+  visibility: "private" | "public";
+  description?: string | null;
+  defaultBranch?: string;
+  wrappedKeys?: Record<string, unknown>;
+  encryptionMode?: EncryptionMode;
+  wrappedDek?: Buffer | Uint8Array | null;
+  keySource?: KeySource;
+}): Promise<StoredRepo> {
+  const row: Record<string, unknown> = {
+    owner: r.owner,
+    name: r.name,
+    visibility: r.visibility,
+    description: r.description ?? null,
+    default_branch: r.defaultBranch ?? "main",
+    wrapped_keys: r.wrappedKeys ?? {},
+    encryption_mode: r.encryptionMode ?? "none",
+    key_source: r.keySource ?? "master",
+  };
+  if (r.wrappedDek) {
+    row.wrapped_dek = bytesToHexLiteral(Buffer.from(r.wrappedDek));
   }
-): Promise<StoredRepo> {
   const rows = await pg<RepoRow[]>(
     "POST",
     "repos?select=*",
-    [
-      {
-        owner: r.owner,
-        name: r.name,
-        visibility: r.visibility,
-        description: r.description ?? null,
-        default_branch: r.defaultBranch ?? "main",
-        wrapped_keys: r.wrappedKeys ?? {},
-      },
-    ],
+    [row],
     { prefer: "return=representation" }
   );
   return repoFromRow(rows[0]);
@@ -311,6 +344,61 @@ export async function getObject(
   );
   if (!rows?.[0]) return null;
   return decodeBytea(rows[0].data);
+}
+
+/**
+ * Memoize per-request DEK unwrap so we don't pay the AES-GCM unwrap cost
+ * for every object during a clone of thousands of objects.
+ */
+const dekCache = new WeakMap<StoredRepo, Buffer>();
+
+function repoDek(repo: StoredRepo): Buffer {
+  let dek = dekCache.get(repo);
+  if (dek) return dek;
+  if (!repo.wrappedDek) {
+    throw new Error(`repo ${repo.id} is server-mode but has no wrapped_dek`);
+  }
+  dek = unwrapDekWithMaster(repo.wrappedDek);
+  dekCache.set(repo, dek);
+  return dek;
+}
+
+/**
+ * Store a git object for a repo, applying the repo's encryption_mode.
+ * Callers (smart-HTTP transport, /api/repos/:id/objects PUT) hand in the
+ * deflated-loose bytes; this function decides whether to wrap them.
+ */
+export async function putRepoObject(
+  repo: StoredRepo,
+  oid: string,
+  deflated: Buffer | Uint8Array
+): Promise<void> {
+  const buf = Buffer.from(deflated);
+  if (repo.encryptionMode === "server") {
+    const wrapped = encryptObjectBytes(repoDek(repo), buf);
+    await putObject(repo.id, oid, wrapped);
+    return;
+  }
+  // 'none' and 'e2ee' pass through verbatim — for 'e2ee' the bytes are
+  // already client-side ciphertext, for 'none' they're plaintext loose.
+  await putObject(repo.id, oid, buf);
+}
+
+/**
+ * Fetch an object and return the deflated-loose bytes a git tool expects.
+ * For server-mode repos, unwraps with the per-repo DEK. For 'e2ee' the bytes
+ * are still client-side ciphertext and only the browser can decrypt them.
+ */
+export async function getRepoObject(
+  repo: StoredRepo,
+  oid: string
+): Promise<Buffer | null> {
+  const raw = await getObject(repo.id, oid);
+  if (!raw) return null;
+  if (repo.encryptionMode === "server") {
+    return decryptObjectBytes(repoDek(repo), raw);
+  }
+  return raw;
 }
 
 export async function listFeaturedRepos(): Promise<StoredRepo[]> {

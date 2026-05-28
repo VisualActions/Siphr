@@ -1,5 +1,6 @@
 import { getRepoByName } from "@/lib/store";
 import { CT_RESULT, handleReceivePack } from "@/lib/git-transport";
+import { gateRepoAccess } from "@/lib/repo-access";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -11,12 +12,14 @@ export async function POST(req: Request, { params }: Params) {
   const { owner, name } = await params;
   const repo = await getRepoByName(owner, name.replace(/\.git$/, ""));
   if (!repo) return new Response("repo not found\n", { status: 404 });
-  if (repo.visibility === "private") {
+  if (repo.encryptionMode === "e2ee") {
     return new Response(
       "encrypted-only-endpoint · see /docs/why-no-plain-push\n",
       { status: 403, headers: { "content-type": "text/plain" } }
     );
   }
+  const { deny } = await gateRepoAccess(req, repo, "write");
+  if (deny) return deny;
   const body = new Uint8Array(await req.arrayBuffer());
   let report: Uint8Array;
   try {

@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
-import { createRepo, getUser, listRepos, reposFor } from "@/lib/store";
+import {
+  createRepo,
+  getUser,
+  listRepos,
+  reposFor,
+  type EncryptionMode,
+} from "@/lib/store";
+import { generateDek, wrapDekWithMaster } from "@/lib/server-crypto";
+import { getOrgByName, getOrgMember } from "@/lib/orgs";
 
 export const runtime = "nodejs";
 
@@ -31,6 +39,11 @@ export async function POST(req: Request) {
     b.wrappedKeys && typeof b.wrappedKeys === "object"
       ? (b.wrappedKeys as Record<string, unknown>)
       : {};
+  // 'server' = at-rest encryption with server-managed key (default for
+  // private). 'e2ee' = legacy browser-encrypted, requires wrappedKeys.
+  // 'none' is automatic for public repos.
+  const requestedMode =
+    typeof b.encryptionMode === "string" ? b.encryptionMode : null;
 
   // Match the signup regex — mixed case, A–Z/a–z/0–9/_/-, no leading or
   // trailing dash. Previously this was lowercase-only, which silently broke
@@ -41,14 +54,59 @@ export async function POST(req: Request) {
   if (!/^[a-zA-Z0-9_.-]{1,64}$/.test(name)) {
     return NextResponse.json({ error: "invalid repo name" }, { status: 400 });
   }
-  if (!(await getUser(owner))) {
+  // Owner namespace may be a user or an org. If it's an org, require the
+  // actor to be an admin/owner of that org.
+  const ownerUser = await getUser(owner);
+  const ownerOrg = ownerUser ? null : await getOrgByName(owner);
+  if (!ownerUser && !ownerOrg) {
     return NextResponse.json({ error: "unknown owner" }, { status: 404 });
   }
-  if (visibility === "private" && !(owner in wrappedKeys)) {
+  if (ownerOrg) {
+    const actor = typeof b.actor === "string" ? b.actor : "";
+    if (!actor) {
+      return NextResponse.json(
+        { error: "actor required to create repos in an org" },
+        { status: 400 }
+      );
+    }
+    const member = await getOrgMember(ownerOrg.id, actor);
+    if (!member || (member.role !== "owner" && member.role !== "admin")) {
+      return NextResponse.json(
+        { error: "actor is not an admin of this org" },
+        { status: 403 }
+      );
+    }
+  }
+
+  // Resolve encryption mode.
+  let encryptionMode: EncryptionMode;
+  if (visibility === "public") {
+    encryptionMode = "none";
+  } else if (requestedMode === "e2ee") {
+    encryptionMode = "e2ee";
+  } else {
+    // Default for private: server-managed at-rest encryption. This is what
+    // makes standard `git push` / `git clone` work for private repos.
+    encryptionMode = "server";
+  }
+
+  if (encryptionMode === "e2ee" && !(owner in wrappedKeys)) {
     return NextResponse.json(
-      { error: "private repos require a wrapped key for the owner" },
+      { error: "e2ee repos require a wrapped key for the owner" },
       { status: 400 }
     );
+  }
+
+  // Generate + wrap the per-repo DEK for server-mode private repos. Master
+  // key is read from SIPHR_MASTER_KEY — this throws cleanly if unset.
+  let wrappedDek: Buffer | null = null;
+  if (encryptionMode === "server") {
+    try {
+      wrappedDek = wrapDekWithMaster(generateDek());
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "server config error";
+      return NextResponse.json({ error: msg }, { status: 500 });
+    }
   }
 
   try {
@@ -58,6 +116,9 @@ export async function POST(req: Request) {
       visibility,
       description,
       wrappedKeys,
+      encryptionMode,
+      wrappedDek,
+      keySource: "master",
     });
     return NextResponse.json({
       ok: true,
@@ -65,6 +126,7 @@ export async function POST(req: Request) {
       owner: repo.owner,
       name: repo.name,
       visibility: repo.visibility,
+      encryptionMode: repo.encryptionMode,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "server error";

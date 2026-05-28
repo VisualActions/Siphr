@@ -5,6 +5,7 @@ import Link from "next/link";
 import TopNav from "@/components/TopNav";
 import { FingerprintSigil } from "@/components/Primitives";
 import { useTheme } from "@/components/ThemeProvider";
+import PatManager from "@/components/PatManager";
 
 type User = {
   username: string;
@@ -187,8 +188,26 @@ export default function SettingsPage() {
           )}
         </Section>
 
+        {/* PERSONAL ACCESS TOKENS */}
+        {user && (
+          <Section n="03" title="Personal access tokens">
+            <Card>
+              <Row
+                label="Git over HTTPS"
+                hint="paste the token as your password when git prompts · used like a GitHub PAT"
+                right={null}
+                last
+              >
+                <div style={{ marginTop: 14 }}>
+                  <PatManager user={user} />
+                </div>
+              </Row>
+            </Card>
+          </Section>
+        )}
+
         {/* DANGER */}
-        <Section n="03" title="The escape hatch">
+        <Section n={user ? "04" : "03"} title="The escape hatch">
           <Card>
             <Row
               label="Lost your passphrase"

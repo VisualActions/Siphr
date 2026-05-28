@@ -1,13 +1,29 @@
 import { NextResponse } from "next/server";
-import { getObject, getRepo, putObject } from "@/lib/store";
+import {
+  getObject,
+  getRepo,
+  getRepoObject,
+  putObject,
+  putRepoObject,
+} from "@/lib/store";
 
 export const runtime = "nodejs";
 
 type Params = { params: Promise<{ id: string; oid: string }> };
 
+/**
+ * Object endpoint. Encryption boundary depends on the repo's mode:
+ *   - 'e2ee' repos: bytes are already client-side ciphertext; store/serve verbatim.
+ *   - 'server' repos: server wraps on PUT, unwraps on GET.
+ *   - 'none' (public): plaintext loose objects, passthrough.
+ *
+ * The smart-HTTP transport doesn't go through this endpoint — it's used by
+ * the browser editor (lib/browser-git.ts) and ad-hoc object uploads.
+ */
 export async function PUT(req: Request, { params }: Params) {
   const { id, oid } = await params;
-  if (!(await getRepo(id))) {
+  const repo = await getRepo(id);
+  if (!repo) {
     return NextResponse.json({ error: "no such repo" }, { status: 404 });
   }
   if (!/^[a-f0-9]{6,128}$/.test(oid)) {
@@ -22,7 +38,12 @@ export async function PUT(req: Request, { params }: Params) {
     return NextResponse.json({ error: "object too large" }, { status: 413 });
   }
 
-  await putObject(id, oid, buf);
+  if (repo.encryptionMode === "e2ee") {
+    // Legacy E2EE: client uploaded opaque ciphertext; store verbatim.
+    await putObject(id, oid, buf);
+  } else {
+    await putRepoObject(repo, oid, buf);
+  }
   return NextResponse.json({ ok: true, oid, bytes: buf.length });
 }
 
@@ -40,10 +61,15 @@ export async function HEAD(_req: Request, { params }: Params) {
 
 export async function GET(_req: Request, { params }: Params) {
   const { id, oid } = await params;
-  if (!(await getRepo(id))) {
+  const repo = await getRepo(id);
+  if (!repo) {
     return NextResponse.json({ error: "no such repo" }, { status: 404 });
   }
-  const buf = await getObject(id, oid);
+  // E2EE repos: return raw ciphertext so the browser can decrypt with the
+  // unwrapped repo key it holds. Everyone else gets plaintext-equivalent.
+  const buf = repo.encryptionMode === "e2ee"
+    ? await getObject(id, oid)
+    : await getRepoObject(repo, oid);
   if (!buf) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }

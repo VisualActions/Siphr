@@ -3,6 +3,7 @@ import {
   buildAdvertisement,
   CT_ADVERTISEMENT,
 } from "@/lib/git-transport";
+import { gateRepoAccess, type Access } from "@/lib/repo-access";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -12,14 +13,12 @@ type Params = { params: Promise<{ owner: string; name: string }> };
 /**
  * Smart-HTTP discovery endpoint.
  *
- * Public repos: real pkt-line ref advertisement so `git clone` / `git push`
- * handshake works.
+ * Behavior depends on encryption_mode:
+ *   - 'none'   (public)  -> open ref advertisement
+ *   - 'server' (private) -> ref advertisement gated by PAT auth (v0.4b)
+ *   - 'e2ee'   (private) -> 403; smart-HTTP can't serve client-only ciphertext
  *
- * Private repos: 403 with policy text. The server cannot encrypt a packfile
- * without the user's repo key, so accepting plaintext objects would leak them.
- *
- * Invariant: response body for private repos is the literal policy string —
- * no repo names, commit messages, or filenames are ever included.
+ * Invariant: 403 response body never includes repo metadata.
  */
 export async function GET(req: Request, { params }: Params) {
   const { owner, name } = await params;
@@ -31,7 +30,7 @@ export async function GET(req: Request, { params }: Params) {
       headers: { "content-type": "text/plain" },
     });
   }
-  if (repo.visibility === "private") {
+  if (repo.encryptionMode === "e2ee") {
     return new Response(
       "encrypted-only-endpoint · see /docs/why-no-plain-push\n",
       {
@@ -55,6 +54,12 @@ export async function GET(req: Request, { params }: Params) {
       }
     );
   }
+
+  // Auth gate: private repos require a PAT for both services; public repos
+  // require one when the client is about to push (service=git-receive-pack).
+  const accessMode: Access = service === "git-receive-pack" ? "write" : "read";
+  const { deny } = await gateRepoAccess(req, repo, accessMode);
+  if (deny) return deny;
 
   const body = await buildAdvertisement(service, repo);
   return new Response(body as unknown as BodyInit, {

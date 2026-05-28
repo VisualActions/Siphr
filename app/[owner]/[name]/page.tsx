@@ -6,6 +6,8 @@ import TopNav from "@/components/TopNav";
 import VerifiedBadge from "@/components/VerifiedBadge";
 import FileBrowser from "@/components/FileBrowser";
 import QuickSetup from "@/components/QuickSetup";
+import IssuesPanel from "@/components/IssuesPanel";
+import PullsPanel from "@/components/PullsPanel";
 import {
   FingerprintSigil,
   Pill,
@@ -206,6 +208,7 @@ export default function RepoPage({
                 info={info}
                 isOwner={isOwner}
                 isPublic={isPublic}
+                currentUser={user}
               />
             )}
             {tab === "code" && (
@@ -625,23 +628,30 @@ function RepoTabStrip({
 }
 
 function TabPanel({
-  tab, info, isOwner, isPublic,
+  tab, info, isOwner, isPublic, currentUser,
 }: {
   tab: Exclude<TabKey, "code">;
   info: RepoInfo;
   isOwner: boolean;
   isPublic: boolean;
+  currentUser: string | null;
 }) {
-  if (tab === "issues" || tab === "pulls") {
+  if (tab === "issues") {
     return (
-      <EmptyPanel
-        title={tab === "issues" ? "Issues" : "Pull requests"}
-        body={
-          tab === "issues"
-            ? "Issue threads with end-to-end encrypted bodies ship in v0.5 — see /roadmap. Each thread will have its own sub-key wrapped to the repo collaborators."
-            : "Pull requests with encrypted diffs and conversations ship in v0.5 — see /roadmap. Per-PR sub-keys, signed commits via Ed25519."
-        }
-        eta="v0.5 — Q3 2026"
+      <IssuesPanel
+        repoId={info.id}
+        owner={info.owner}
+        name={info.name}
+        currentUser={currentUser}
+      />
+    );
+  }
+  if (tab === "pulls") {
+    return (
+      <PullsPanel
+        repoId={info.id}
+        owner={info.owner}
+        name={info.name}
       />
     );
   }
