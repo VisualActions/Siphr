@@ -87,6 +87,36 @@ export default function SecurityPage() {
               recovery flow than a backdoor.
             </p>
           </Section>
+
+          <Section title="Contact" id="contact">
+            <p>
+              These are the only mailboxes that speak for Siphr. Anything that claims to be Siphr from a
+              different domain is not us.
+            </p>
+            <ul style={{
+              listStyle: "none", padding: 0, margin: 0,
+              display: "flex", flexDirection: "column", gap: 10,
+              fontFamily: "var(--mono)", fontSize: 13,
+            }}>
+              <ContactRow
+                addr="support@siphr.dev"
+                purpose="general questions, bug reports, account help"
+              />
+              <ContactRow
+                addr="editorial@siphr.dev"
+                purpose="propose your project for /featured · curated weekly"
+              />
+              <ContactRow
+                addr="newsletters@siphr.dev"
+                purpose="subscribe to transparency-log + release-note digests"
+              />
+              <ContactRow
+                addr="noreply@siphr.dev"
+                purpose="automated mail from us only · do not reply"
+                noLink
+              />
+            </ul>
+          </Section>
         </div>
 
         <div
@@ -100,6 +130,29 @@ export default function SecurityPage() {
         </div>
       </main>
     </>
+  );
+}
+
+function ContactRow({
+  addr, purpose, noLink,
+}: { addr: string; purpose: string; noLink?: boolean }) {
+  return (
+    <li style={{
+      display: "grid", gridTemplateColumns: "minmax(0, 220px) 1fr",
+      gap: 14, alignItems: "baseline",
+    }}>
+      {noLink ? (
+        <span style={{ color: "var(--muted)" }}>{addr}</span>
+      ) : (
+        <a
+          href={`mailto:${addr}`}
+          style={{ color: "var(--phosphor)" }}
+        >{addr}</a>
+      )}
+      <span style={{ color: "var(--ink-2)", fontFamily: "var(--sans)" }}>
+        {purpose}
+      </span>
+    </li>
   );
 }
 

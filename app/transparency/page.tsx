@@ -27,7 +27,10 @@ export default function TransparencyPage() {
               ↓ View on GitHub
             </a>
             <Link href="/security" className="btn ghost">Threat model</Link>
-            <a href="https://github.com/VisualActions/Siphr/commits/main" target="_blank" rel="noreferrer" className="btn ghost">
+            <a
+              href="mailto:newsletters@siphr.dev?subject=Subscribe%20to%20transparency%20log"
+              className="btn ghost"
+            >
               Subscribe to log changes
             </a>
           </div>
@@ -166,6 +169,7 @@ export default function TransparencyPage() {
             <span>© 2026 siphr · open source · agpl</span>
             <div style={{ display: "flex", gap: 22 }}>
               <Link href="/security">security</Link>
+              <a href="mailto:support@siphr.dev">support@siphr.dev</a>
               <a href="https://github.com/VisualActions/Siphr" target="_blank" rel="noreferrer">source</a>
             </div>
           </div>
