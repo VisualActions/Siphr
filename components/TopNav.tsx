@@ -14,13 +14,32 @@ export default function TopNav({ active = null }: Props) {
   const [user, setUser] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [orgs, setOrgs] = useState<{ name: string; displayName: string | null }[]>([]);
   const { theme, setTheme } = useTheme();
 
   const menuRef = useRef<HTMLDivElement | null>(null);
   const appearanceRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setUser(localStorage.getItem("siphr:current_user"));
+    const u = localStorage.getItem("siphr:current_user");
+    setUser(u);
+    if (u) {
+      // Lazy: only load orgs when we have a user. Failures are silent —
+      // not having orgs is the common case and shouldn't break the nav.
+      fetch(`/api/orgs?user=${encodeURIComponent(u)}`)
+        .then((r) => (r.ok ? r.json() : { orgs: [] }))
+        .then((j) =>
+          setOrgs(
+            (j.orgs ?? []).map(
+              (o: { name: string; displayName: string | null }) => ({
+                name: o.name,
+                displayName: o.displayName,
+              })
+            )
+          )
+        )
+        .catch(() => setOrgs([]));
+    }
   }, []);
 
   useEffect(() => {
@@ -136,6 +155,34 @@ export default function TopNav({ active = null }: Props) {
                       <span style={{ color: "var(--phosphor)" }}>operator console →</span>
                     </MenuLink>
                   )}
+
+                  {/* Orgs section — only shown when the user belongs to any or
+                      we want to surface the new-org affordance. */}
+                  <div style={{ height: 1, background: "var(--line-2)", margin: "4px 0" }} />
+                  <div style={{
+                    padding: "6px 12px 4px", fontFamily: "var(--mono)", fontSize: 10,
+                    color: "var(--muted)", letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                  }}>
+                    organizations
+                  </div>
+                  {orgs.length === 0 ? (
+                    <div style={{ padding: "4px 12px 6px", fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted-2)" }}>
+                      not in any yet
+                    </div>
+                  ) : (
+                    orgs.map((o) => (
+                      <MenuLink key={o.name} href={`/org/${o.name}`}>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
+                          {o.displayName || o.name}
+                        </span>
+                      </MenuLink>
+                    ))
+                  )}
+                  <MenuLink href="/orgs/new">
+                    <span style={{ color: "var(--phosphor)" }}>+ new organization</span>
+                  </MenuLink>
+
                   <div style={{ height: 1, background: "var(--line-2)", margin: "4px 0" }} />
                   <button
                     onClick={signOut}

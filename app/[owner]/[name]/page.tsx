@@ -44,6 +44,9 @@ export default function RepoPage({
   const [tab, setTab] = useState<"code" | "issues" | "pulls" | "keys" | "audit" | "settings">("code");
   const [watch, setWatch] = useState<{ watched: boolean; count: number }>({ watched: false, count: 0 });
   const [clonedCopied, setClonedCopied] = useState(false);
+  const [counts, setCounts] = useState<{ openIssues: number; openPulls: number; releases: number }>({
+    openIssues: 0, openPulls: 0, releases: 0,
+  });
 
   useEffect(() => {
     setUser(localStorage.getItem("siphr:current_user"));
@@ -67,6 +70,25 @@ export default function RepoPage({
       .then((j) => j && setWatch(j))
       .catch(() => {});
   }, [info, user]);
+
+  // Sidebar counts — issues, pulls, releases. Three parallel cheap GETs; all
+  // ignored on failure so the page renders without them.
+  useEffect(() => {
+    if (!info) return;
+    Promise.all([
+      fetch(`/api/repos/${info.id}/issues?state=open`).then((r) => (r.ok ? r.json() : { issues: [] })),
+      fetch(`/api/repos/${info.id}/pulls?state=open`).then((r) => (r.ok ? r.json() : { prs: [] })),
+      fetch(`/api/repos/${info.id}/releases`).then((r) => (r.ok ? r.json() : { releases: [] })),
+    ])
+      .then(([is, ps, rs]) => {
+        setCounts({
+          openIssues: (is.issues ?? []).length,
+          openPulls: (ps.prs ?? []).length,
+          releases: (rs.releases ?? []).length,
+        });
+      })
+      .catch(() => {});
+  }, [info]);
 
   async function toggleWatch() {
     if (!info || !user) return;
@@ -190,6 +212,8 @@ export default function RepoPage({
                 isOwner={isOwner}
                 isPrivate={!isPublic}
                 collabCount={info.collaborators.length}
+                openIssues={counts.openIssues}
+                openPulls={counts.openPulls}
               />
             </div>
           </div>
@@ -388,6 +412,26 @@ export default function RepoPage({
             </div>
 
             <div>
+              <div className="eyebrow" style={{ marginBottom: 12 }}>↳ shortcuts</div>
+              <div className="card flat" style={{ padding: 0, overflow: "hidden" }}>
+                <Link
+                  href={`/${info.owner}/${info.name}/releases`}
+                  style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "10px 14px",
+                    color: "var(--ink)", textDecoration: "none",
+                    fontFamily: "var(--mono)", fontSize: 12,
+                  }}
+                >
+                  <span>releases</span>
+                  <span style={{ color: "var(--muted)" }}>
+                    {counts.releases} →
+                  </span>
+                </Link>
+              </div>
+            </div>
+
+            <div>
               <div className="eyebrow" style={{ marginBottom: 12 }}>↳ what the server holds</div>
               <div className="card flat" style={{ padding: "12px 14px" }}>
                 <KV k="objects" v={info.objectCount.toString()} />
@@ -574,17 +618,20 @@ type TabKey = "code" | "issues" | "pulls" | "keys" | "audit" | "settings";
 
 function RepoTabStrip({
   active, onChange, isOwner, isPrivate, collabCount,
+  openIssues, openPulls,
 }: {
   active: TabKey;
   onChange: (t: TabKey) => void;
   isOwner: boolean;
   isPrivate: boolean;
   collabCount: number;
+  openIssues: number;
+  openPulls: number;
 }) {
   const items: { key: TabKey; label: string; count?: number; dot?: boolean }[] = [
     { key: "code", label: "code" },
-    { key: "issues", label: "issues", count: 0 },
-    { key: "pulls", label: "pull requests", count: 0 },
+    { key: "issues", label: "issues", count: openIssues },
+    { key: "pulls", label: "pull requests", count: openPulls },
     { key: "keys", label: "keys", count: collabCount, dot: isPrivate },
     { key: "audit", label: "audit" },
     ...(isOwner ? [{ key: "settings" as TabKey, label: "settings" }] : []),
