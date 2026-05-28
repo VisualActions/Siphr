@@ -204,6 +204,42 @@ async function commitTreeOid(dir: string, commitOid: string): Promise<string | n
   return o.tree ?? null;
 }
 
+/**
+ * Read a single file's content at a given commit. Returns null if the file
+ * doesn't exist at that commit. Used by the inline-diff API.
+ *
+ * Large blobs are returned verbatim — the diff layer handles capping.
+ */
+export async function readBlobAtCommit(
+  repo: StoredRepo,
+  commitOid: string,
+  filepath: string
+): Promise<{ content: string; binary: false } | { binary: true } | null> {
+  const ws = await hydrateReachable(repo, [commitOid]);
+  try {
+    let blob: Uint8Array;
+    try {
+      const result = await git.readBlob({
+        fs,
+        dir: ws.dir,
+        oid: commitOid,
+        filepath,
+      });
+      blob = result.blob;
+    } catch {
+      return null; // file didn't exist at this commit
+    }
+    // Heuristic for binary: NUL byte in the first 8KB.
+    const sample = blob.subarray(0, Math.min(blob.length, 8192));
+    for (let i = 0; i < sample.length; i++) {
+      if (sample[i] === 0) return { binary: true };
+    }
+    return { content: Buffer.from(blob).toString("utf8"), binary: false };
+  } finally {
+    await ws.cleanup();
+  }
+}
+
 export async function diffTrees(
   repo: StoredRepo,
   baseCommit: string,

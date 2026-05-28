@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, use } from "react";
 import TopNav from "@/components/TopNav";
 import { FingerprintSigil } from "@/components/Primitives";
+import DiffFile from "@/components/DiffFile";
 
 type PR = {
   id: string;
@@ -295,29 +296,18 @@ export default function PullPage({
                 ↳ no file changes
               </div>
             ) : (
-              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                {changes.map((c) => (
-                  <li key={c.path} style={{
-                    padding: "10px 14px",
-                    borderBottom: "1px solid var(--line-2)",
-                    display: "grid", gridTemplateColumns: "auto 1fr",
-                    gap: 12, alignItems: "center",
-                  }}>
-                    <StatusGlyph status={c.status} />
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 12.5, wordBreak: "break-all" }}>
-                      {c.path}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              changes.map((c, idx) => (
+                <DiffFile
+                  key={c.path}
+                  repoId={repo.id}
+                  prNumber={pr.number}
+                  path={c.path}
+                  status={c.status}
+                  // First file expands by default so users see something.
+                  defaultOpen={idx === 0 && changes.length <= 10}
+                />
+              ))
             )}
-            <div style={{
-              padding: "10px 14px",
-              fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)",
-              background: "var(--panel-2)",
-            }}>
-              ↳ inline diff rendering ships in v0.4d.2
-            </div>
           </div>
         )}
       </main>
@@ -333,20 +323,6 @@ function StateBadge({ state }: { state: "open" | "closed" | "merged" }) {
   }[state];
   return (
     <span className="pill" style={{ color: colors.c, borderColor: colors.c }}>{colors.t}</span>
-  );
-}
-
-function StatusGlyph({ status }: { status: "added" | "removed" | "modified" }) {
-  const ch = status === "added" ? "+" : status === "removed" ? "−" : "~";
-  const c =
-    status === "added" ? "var(--phosphor)"
-    : status === "removed" ? "var(--signal)"
-    : "var(--amber)";
-  return (
-    <span style={{
-      fontFamily: "var(--mono)", fontSize: 12,
-      color: c, width: 16, textAlign: "center",
-    }}>{ch}</span>
   );
 }
 
