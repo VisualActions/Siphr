@@ -33,7 +33,10 @@ export default function SettingsPage() {
     }
   }, []);
 
-  function signOut() {
+  async function signOut() {
+    try {
+      await fetch("/api/auth/signout", { method: "POST" });
+    } catch { /* still clear local */ }
     localStorage.removeItem("siphr:current_user");
     window.location.href = "/";
   }

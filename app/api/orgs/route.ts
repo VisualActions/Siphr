@@ -5,6 +5,7 @@ import {
   listOrgsForUser,
 } from "@/lib/orgs";
 import { findUserCaseInsensitive, getUser } from "@/lib/store";
+import { requireSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -19,6 +20,10 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const auth = await requireSession(req);
+  if (auth.deny) return auth.deny;
+  const founder = auth.user;
+
   let body: unknown;
   try {
     body = await req.json();
@@ -29,13 +34,9 @@ export async function POST(req: Request) {
   const name = typeof b.name === "string" ? b.name.trim() : "";
   const displayName = typeof b.displayName === "string" ? b.displayName : null;
   const description = typeof b.description === "string" ? b.description : null;
-  const founder = typeof b.founder === "string" ? b.founder.trim() : "";
 
   if (!/^[A-Za-z0-9_][A-Za-z0-9_-]{1,30}[A-Za-z0-9_}]$/.test(name) && !/^[A-Za-z0-9_]{3}$/.test(name)) {
     return NextResponse.json({ error: "invalid org name" }, { status: 400 });
-  }
-  if (!founder) {
-    return NextResponse.json({ error: "founder required" }, { status: 400 });
   }
   if (!(await getUser(founder))) {
     return NextResponse.json({ error: "no such user" }, { status: 404 });

@@ -8,6 +8,7 @@ import {
   type OrgRole,
 } from "@/lib/orgs";
 import { getUser } from "@/lib/store";
+import { requireSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -26,6 +27,10 @@ export async function GET(_req: Request, { params }: Params) {
 }
 
 export async function POST(req: Request, { params }: Params) {
+  const auth = await requireSession(req);
+  if (auth.deny) return auth.deny;
+  const actor = auth.user;
+
   const { name } = await params;
   let body: unknown;
   try {
@@ -34,11 +39,10 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
   const b = (body ?? {}) as Record<string, unknown>;
-  const actor = typeof b.actor === "string" ? b.actor : "";
   const username = typeof b.username === "string" ? b.username : "";
   const role = typeof b.role === "string" ? b.role : "";
-  if (!actor || !username || !role) {
-    return NextResponse.json({ error: "actor, username, role required" }, { status: 400 });
+  if (!username || !role) {
+    return NextResponse.json({ error: "username, role required" }, { status: 400 });
   }
   if (!["owner", "admin", "member"].includes(role)) {
     return NextResponse.json({ error: "invalid role" }, { status: 400 });
@@ -56,12 +60,15 @@ export async function POST(req: Request, { params }: Params) {
 }
 
 export async function DELETE(req: Request, { params }: Params) {
+  const auth = await requireSession(req);
+  if (auth.deny) return auth.deny;
+  const actor = auth.user;
+
   const { name } = await params;
   const url = new URL(req.url);
-  const actor = (url.searchParams.get("actor") ?? "").trim();
   const username = (url.searchParams.get("username") ?? "").trim();
-  if (!actor || !username) {
-    return NextResponse.json({ error: "actor + username required" }, { status: 400 });
+  if (!username) {
+    return NextResponse.json({ error: "username required" }, { status: 400 });
   }
   const org = await getOrgByName(name);
   if (!org) return NextResponse.json({ error: "not found" }, { status: 404 });

@@ -61,11 +61,10 @@ export default function RepoPage({
       .then((j) => j && setInfo(j));
   }, [owner, name]);
 
-  // Watch state — repo info needed for repo id
+  // Watch state — session cookie identifies "you" server-side.
   useEffect(() => {
     if (!info) return;
-    const q = user ? `?user=${encodeURIComponent(user)}` : "";
-    fetch(`/api/repos/${info.id}/watch${q}`)
+    fetch(`/api/repos/${info.id}/watch`)
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => j && setWatch(j))
       .catch(() => {});
@@ -93,7 +92,7 @@ export default function RepoPage({
   async function toggleWatch() {
     if (!info || !user) return;
     const method = watch.watched ? "DELETE" : "POST";
-    const r = await fetch(`/api/repos/${info.id}/watch?user=${encodeURIComponent(user)}`, { method });
+    const r = await fetch(`/api/repos/${info.id}/watch`, { method });
     if (r.ok) {
       setWatch((w) => ({
         watched: !w.watched,

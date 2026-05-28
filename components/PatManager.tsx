@@ -31,7 +31,7 @@ export default function PatManager({ user }: { user: string }) {
   async function refresh() {
     setError(null);
     try {
-      const r = await fetch(`/api/pats?user=${encodeURIComponent(user)}`);
+      const r = await fetch(`/api/pats`);
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "load failed");
       setPats(j.pats ?? []);
@@ -59,7 +59,8 @@ export default function PatManager({ user }: { user: string }) {
       const r = await fetch("/api/pats", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ username: user, name: newName.trim(), expiresAt }),
+        // username is taken from the session cookie now
+        body: JSON.stringify({ name: newName.trim(), expiresAt }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "create failed");
@@ -78,7 +79,7 @@ export default function PatManager({ user }: { user: string }) {
     if (!confirm("Revoke this token? Any tool using it will start failing immediately.")) return;
     try {
       const r = await fetch(
-        `/api/pats/${encodeURIComponent(id)}?user=${encodeURIComponent(user)}`,
+        `/api/pats/${encodeURIComponent(id)}`,
         { method: "DELETE" }
       );
       if (!r.ok) {

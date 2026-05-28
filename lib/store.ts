@@ -142,15 +142,45 @@ export async function findUserCaseInsensitive(username: string): Promise<StoredU
   return rows?.[0] ? userFromRow(rows[0]) : null;
 }
 
-export async function createUser(u: StoredUser): Promise<void> {
-  await pg("POST", "users", [
-    {
-      username: u.username,
-      fingerprint: u.fingerprint,
-      public_key_jwk: u.publicKeyJwk,
-      encrypted_identity: u.encryptedIdentity,
-    },
-  ]);
+export async function createUser(
+  u: StoredUser & { authHash?: string; authSalt?: string }
+): Promise<void> {
+  const row: Record<string, unknown> = {
+    username: u.username,
+    fingerprint: u.fingerprint,
+    public_key_jwk: u.publicKeyJwk,
+    encrypted_identity: u.encryptedIdentity,
+  };
+  if (u.authHash) row.auth_hash = u.authHash;
+  if (u.authSalt) row.auth_salt = u.authSalt;
+  await pg("POST", "users", [row]);
+}
+
+/** Internal: fetch the auth hash + salt for sign-in verification. */
+export async function getUserAuth(
+  username: string
+): Promise<{ authHash: string | null; authSalt: string | null } | null> {
+  const rows = await pg<
+    { auth_hash: string | null; auth_salt: string | null }[]
+  >(
+    "GET",
+    `users?select=auth_hash,auth_salt&username=eq.${encodeURIComponent(username)}&limit=1`
+  );
+  if (!rows?.[0]) return null;
+  return { authHash: rows[0].auth_hash, authSalt: rows[0].auth_salt };
+}
+
+/** Set or rotate a user's auth hash. Used on first signin migration + signup. */
+export async function setUserAuthHash(
+  username: string,
+  authHash: string,
+  authSalt: string
+): Promise<void> {
+  await pg(
+    "PATCH",
+    `users?username=eq.${encodeURIComponent(username)}`,
+    { auth_hash: authHash, auth_salt: authSalt }
+  );
 }
 
 export async function setUserVerification(

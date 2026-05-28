@@ -8,6 +8,7 @@ import {
   type Permission,
 } from "@/lib/orgs";
 import { getRepo, getUser } from "@/lib/store";
+import { requireSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -32,6 +33,10 @@ export async function GET(_req: Request, { params }: Params) {
 }
 
 export async function POST(req: Request, { params }: Params) {
+  const auth = await requireSession(req);
+  if (auth.deny) return auth.deny;
+  const actor = auth.user;
+
   const { id } = await params;
   let body: unknown;
   try {
@@ -40,14 +45,13 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
   const b = (body ?? {}) as Record<string, unknown>;
-  const actor = typeof b.actor === "string" ? b.actor : "";
   const principalType = b.principalType === "team" ? "team" : "user";
   const principalId = typeof b.principalId === "string" ? b.principalId.trim() : "";
   const permission = typeof b.permission === "string" ? b.permission : "";
 
-  if (!actor || !principalId || !permission) {
+  if (!principalId || !permission) {
     return NextResponse.json(
-      { error: "actor, principalId, permission required" },
+      { error: "principalId, permission required" },
       { status: 400 }
     );
   }
@@ -73,13 +77,16 @@ export async function POST(req: Request, { params }: Params) {
 }
 
 export async function DELETE(req: Request, { params }: Params) {
+  const auth = await requireSession(req);
+  if (auth.deny) return auth.deny;
+  const actor = auth.user;
+
   const { id } = await params;
   const url = new URL(req.url);
-  const actor = (url.searchParams.get("actor") ?? "").trim();
   const principalType = (url.searchParams.get("principalType") ?? "user") as "user" | "team";
   const principalId = (url.searchParams.get("principalId") ?? "").trim();
-  if (!actor || !principalId) {
-    return NextResponse.json({ error: "actor + principalId required" }, { status: 400 });
+  if (!principalId) {
+    return NextResponse.json({ error: "principalId required" }, { status: 400 });
   }
   if (!(await actorCanManage(id, actor))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });

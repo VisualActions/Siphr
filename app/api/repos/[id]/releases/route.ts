@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createRelease, listReleases } from "@/lib/releases";
 import { getRef, getRepo, getUser } from "@/lib/store";
 import { effectivePermission, permissionAtLeast } from "@/lib/orgs";
+import { requireSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,9 @@ export async function GET(_req: Request, { params }: Params) {
 }
 
 export async function POST(req: Request, { params }: Params) {
+  const auth = await requireSession(req);
+  if (auth.deny) return auth.deny;
+
   const { id } = await params;
   let body: unknown;
   try {
@@ -25,7 +29,7 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
   const b = (body ?? {}) as Record<string, unknown>;
-  const author = typeof b.author === "string" ? b.author.trim() : "";
+  const author = auth.user;
   const tagName = typeof b.tagName === "string" ? b.tagName.trim() : "";
   const name = typeof b.name === "string" ? b.name : null;
   const releaseBody = typeof b.body === "string" ? b.body : "";
@@ -33,7 +37,6 @@ export async function POST(req: Request, { params }: Params) {
   const draft = b.draft === true;
   const prerelease = b.prerelease === true;
 
-  if (!author) return NextResponse.json({ error: "author required" }, { status: 400 });
   if (!tagName) return NextResponse.json({ error: "tag name required" }, { status: 400 });
   if (!target) return NextResponse.json({ error: "target required" }, { status: 400 });
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createPR, listPRs, type PRState } from "@/lib/prs";
 import { getRef, getRepo, getUser } from "@/lib/store";
+import { requireSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -23,6 +24,9 @@ export async function GET(req: Request, { params }: Params) {
 }
 
 export async function POST(req: Request, { params }: Params) {
+  const auth = await requireSession(req);
+  if (auth.deny) return auth.deny;
+
   const { id } = await params;
   let body: unknown;
   try {
@@ -31,14 +35,14 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
   const b = (body ?? {}) as Record<string, unknown>;
-  const author = typeof b.author === "string" ? b.author.trim() : "";
+  const author = auth.user;
   const title = typeof b.title === "string" ? b.title.trim() : "";
   const prBody = typeof b.body === "string" ? b.body : "";
   const headRef = typeof b.headRef === "string" ? b.headRef : "";
   const baseRef = typeof b.baseRef === "string" ? b.baseRef : "";
 
-  if (!author) return NextResponse.json({ error: "author required" }, { status: 400 });
   if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
+  if (prBody.length > 64_000) return NextResponse.json({ error: "body too long" }, { status: 413 });
   if (!headRef.startsWith("refs/heads/") || !baseRef.startsWith("refs/heads/")) {
     return NextResponse.json(
       { error: "headRef and baseRef must be refs/heads/* paths" },

@@ -8,6 +8,7 @@ import {
 } from "@/lib/store";
 import { generateDek, wrapDekWithMaster } from "@/lib/server-crypto";
 import { getOrgByName, getOrgMember } from "@/lib/orgs";
+import { requireSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -23,6 +24,10 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const auth = await requireSession(req);
+  if (auth.deny) return auth.deny;
+  const actor = auth.user;
+
   let body: unknown;
   try {
     body = await req.json();
@@ -62,20 +67,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "unknown owner" }, { status: 404 });
   }
   if (ownerOrg) {
-    const actor = typeof b.actor === "string" ? b.actor : "";
-    if (!actor) {
-      return NextResponse.json(
-        { error: "actor required to create repos in an org" },
-        { status: 400 }
-      );
-    }
     const member = await getOrgMember(ownerOrg.id, actor);
     if (!member || (member.role !== "owner" && member.role !== "admin")) {
       return NextResponse.json(
-        { error: "actor is not an admin of this org" },
+        { error: "you are not an admin of this org" },
         { status: 403 }
       );
     }
+  } else if (ownerUser && actor !== owner) {
+    // A user can only create repos under their own namespace.
+    return NextResponse.json(
+      { error: "cannot create a repo under another user's namespace" },
+      { status: 403 }
+    );
   }
 
   // Resolve encryption mode.

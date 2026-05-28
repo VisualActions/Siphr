@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { deleteRelease, getReleaseByTag } from "@/lib/releases";
 import { getRepo } from "@/lib/store";
 import { effectivePermission, permissionAtLeast } from "@/lib/orgs";
+import { requireSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -15,12 +16,11 @@ export async function GET(_req: Request, { params }: Params) {
 }
 
 export async function DELETE(req: Request, { params }: Params) {
+  const auth = await requireSession(req);
+  if (auth.deny) return auth.deny;
+  const actor = auth.user;
+
   const { id, tag } = await params;
-  const url = new URL(req.url);
-  const actor = (url.searchParams.get("actor") ?? "").trim();
-  if (!actor) {
-    return NextResponse.json({ error: "actor required" }, { status: 400 });
-  }
   const repo = await getRepo(id);
   if (!repo) return NextResponse.json({ error: "no such repo" }, { status: 404 });
   const perm = await effectivePermission(actor, repo);

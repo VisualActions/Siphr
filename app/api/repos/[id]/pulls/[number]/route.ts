@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getPRByNumber, updatePR, type PRState } from "@/lib/prs";
 import { aheadBehind, diffTrees } from "@/lib/git-server";
 import { getRepo } from "@/lib/store";
+import { requireSession } from "@/lib/auth";
+import { effectivePermission, permissionAtLeast } from "@/lib/orgs";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -33,10 +35,20 @@ export async function GET(req: Request, { params }: Params) {
 }
 
 export async function PATCH(req: Request, { params }: Params) {
+  const auth = await requireSession(req);
+  if (auth.deny) return auth.deny;
+
   const { id, number } = await params;
   const n = parseInt(number, 10);
+  const repo = await getRepo(id);
+  if (!repo) return NextResponse.json({ error: "no such repo" }, { status: 404 });
   const existing = await getPRByNumber(id, n);
   if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  // Author can edit own PR + flip its open/closed state; maintainers can too.
+  const perm = await effectivePermission(auth.user, repo);
+  const canManage = permissionAtLeast(perm, "maintain") || auth.user === existing.author;
+  if (!canManage) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   let body: unknown;
   try {
@@ -47,7 +59,10 @@ export async function PATCH(req: Request, { params }: Params) {
   const b = (body ?? {}) as Record<string, unknown>;
   const patch: Parameters<typeof updatePR>[1] = {};
   if (typeof b.title === "string") patch.title = b.title.trim().slice(0, 200);
-  if (typeof b.body === "string") patch.body = b.body;
+  if (typeof b.body === "string") {
+    if (b.body.length > 64_000) return NextResponse.json({ error: "body too long" }, { status: 413 });
+    patch.body = b.body;
+  }
   if (b.state === "open" || b.state === "closed") {
     // 'merged' is only set by the merge endpoint.
     patch.state = b.state as PRState;

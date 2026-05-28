@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRepo } from "@/lib/store";
 import { pg, upsert } from "@/lib/supabase";
+import { getSessionUser, requireSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -9,21 +10,17 @@ type Params = { params: Promise<{ id: string }> };
 /**
  * Watch/unwatch a repository.
  *
- * The current model is best-effort: anyone with a username string can
- * (un)watch any repo. No auth on the wire because Siphr has no server-side
- * session. Once v0.5 signing keys exist, we'll require a signed assertion.
- *
- *   GET    ?user=alice   → { watched: boolean, count: number }
- *   POST   ?user=alice   → mark watched (idempotent)
- *   DELETE ?user=alice   → unwatch
+ * GET    -> { watched: boolean, count: number }
+ *           (count is public; watched is "you, the session-holder" — null if anon)
+ * POST   -> mark watched (idempotent) — requires session
+ * DELETE -> unwatch — requires session, only your own row
  */
 export async function GET(req: Request, { params }: Params) {
   const { id } = await params;
-  const url = new URL(req.url);
-  const user = (url.searchParams.get("user") ?? "").trim();
   if (!(await getRepo(id))) {
     return NextResponse.json({ error: "no such repo" }, { status: 404 });
   }
+  const user = await getSessionUser(req);
   const [allRows, mine] = await Promise.all([
     pg<{ user_username: string }[]>(
       "GET",
@@ -44,12 +41,11 @@ export async function GET(req: Request, { params }: Params) {
 }
 
 export async function POST(req: Request, { params }: Params) {
+  const auth = await requireSession(req);
+  if (auth.deny) return auth.deny;
+  const user = auth.user;
+
   const { id } = await params;
-  const url = new URL(req.url);
-  const user = (url.searchParams.get("user") ?? "").trim();
-  if (!user) {
-    return NextResponse.json({ error: "user required" }, { status: 400 });
-  }
   if (!(await getRepo(id))) {
     return NextResponse.json({ error: "no such repo" }, { status: 404 });
   }
@@ -67,12 +63,11 @@ export async function POST(req: Request, { params }: Params) {
 }
 
 export async function DELETE(req: Request, { params }: Params) {
+  const auth = await requireSession(req);
+  if (auth.deny) return auth.deny;
+  const user = auth.user;
+
   const { id } = await params;
-  const url = new URL(req.url);
-  const user = (url.searchParams.get("user") ?? "").trim();
-  if (!user) {
-    return NextResponse.json({ error: "user required" }, { status: 400 });
-  }
   if (!(await getRepo(id))) {
     return NextResponse.json({ error: "no such repo" }, { status: 404 });
   }

@@ -3,6 +3,7 @@ import { getPRByNumber, updatePR } from "@/lib/prs";
 import { isFastForward } from "@/lib/git-server";
 import { getRef, getRepo, putRef } from "@/lib/store";
 import { effectivePermission, permissionAtLeast } from "@/lib/orgs";
+import { requireSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -16,20 +17,12 @@ type Params = { params: Promise<{ id: string; number: string }> };
  * must rebase locally.
  */
 export async function POST(req: Request, { params }: Params) {
+  const auth = await requireSession(req);
+  if (auth.deny) return auth.deny;
+  const actor = auth.user;
+
   const { id, number } = await params;
   const n = parseInt(number, 10);
-
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
-  }
-  const b = (body ?? {}) as Record<string, unknown>;
-  const actor = typeof b.actor === "string" ? b.actor : "";
-  if (!actor) {
-    return NextResponse.json({ error: "actor required" }, { status: 400 });
-  }
 
   const repo = await getRepo(id);
   if (!repo) return NextResponse.json({ error: "no such repo" }, { status: 404 });

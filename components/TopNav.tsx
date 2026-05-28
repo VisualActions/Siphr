@@ -55,7 +55,12 @@ export default function TopNav({ active = null }: Props) {
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
-  function signOut() {
+  async function signOut() {
+    // Revoke the server-side session, clear local hints, hard-navigate so
+    // any in-flight state is reset.
+    try {
+      await fetch("/api/auth/signout", { method: "POST" });
+    } catch { /* fall through and still clear local */ }
     localStorage.removeItem("siphr:current_user");
     window.location.href = "/";
   }

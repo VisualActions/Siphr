@@ -33,8 +33,24 @@ export default function SigninPage() {
 
       if (!encrypted) throw new Error("Could not load identity.");
 
+      // Decrypt locally first — this proves the passphrase is correct in a
+      // way the user immediately sees (wrong passphrase = clean error here,
+      // not a confusing 401 from the server).
       const id = await decryptIdentity(encrypted, passphrase);
       await fingerprint(id.publicKeyJwk);
+
+      // Establish a server session. Server hashes the passphrase with scrypt,
+      // verifies (or enrolls if this is a legacy account), and sets an
+      // httpOnly cookie. The passphrase only crosses the wire here, over HTTPS.
+      const authRes = await fetch("/api/auth/signin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username, passphrase }),
+      });
+      if (!authRes.ok) {
+        const j = await authRes.json().catch(() => ({}));
+        throw new Error(j.error ?? `Sign-in failed (${authRes.status})`);
+      }
 
       localStorage.setItem(`siphr:identity:${username}`, JSON.stringify(encrypted));
       localStorage.setItem("siphr:current_user", username);

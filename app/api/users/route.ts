@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
 import { createUser, findUserCaseInsensitive } from "@/lib/store";
+import {
+  clientIp,
+  createSession,
+  hashPassphrase,
+  isSecureRequest,
+  sessionCookie,
+} from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -19,6 +26,7 @@ export async function POST(req: Request) {
   const publicKeyJwk = b.publicKeyJwk;
   const encryptedIdentity = b.encryptedIdentity;
   const fp = typeof b.fingerprint === "string" ? b.fingerprint : "";
+  const passphrase = typeof b.passphrase === "string" ? b.passphrase : "";
 
   if (!/^[A-Za-z0-9_-]{3,32}$/.test(username) || /^-|-$/.test(username)) {
     return NextResponse.json({ error: "invalid username" }, { status: 400 });
@@ -37,6 +45,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "username taken" }, { status: 409 });
   }
 
+  // Old clients didn't send a passphrase at signup. We still accept the
+  // signup so they aren't broken — the first signin will enroll them into
+  // the modern auth path.
+  let authMaterial: { authHash?: string; authSalt?: string } = {};
+  if (passphrase) {
+    const { hash, salt } = await hashPassphrase(passphrase);
+    authMaterial = { authHash: hash, authSalt: salt };
+  }
+
   try {
     await createUser({
       username,
@@ -44,12 +61,32 @@ export async function POST(req: Request) {
       encryptedIdentity,
       fingerprint: fp,
       createdAt: new Date().toISOString(),
+      ...authMaterial,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "server error";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 
+  // If the signup included a passphrase we have everything we need to issue
+  // a session right now so the user lands signed-in.
+  if (passphrase) {
+    const { token, expiresAt } = await createSession({
+      username,
+      userAgent: req.headers.get("user-agent"),
+      ip: clientIp(req),
+    });
+    return new Response(
+      JSON.stringify({ ok: true, username, fingerprint: fp }),
+      {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "set-cookie": sessionCookie(token, expiresAt, isSecureRequest(req)),
+        },
+      }
+    );
+  }
   return NextResponse.json({ ok: true, username, fingerprint: fp });
 }
 

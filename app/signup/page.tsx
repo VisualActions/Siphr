@@ -64,6 +64,10 @@ export default function SignupPage() {
           publicKeyJwk: identity.publicKeyJwk,
           encryptedIdentity: encrypted,
           fingerprint: fpHex,
+          // Sent only at signup, never stored client-side. The server hashes
+          // it with scrypt before storing; the response carries an httpOnly
+          // session cookie so the user lands signed in.
+          passphrase,
         }),
       });
       if (!res.ok) {

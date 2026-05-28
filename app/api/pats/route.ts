@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createPat, listPatsFor } from "@/lib/pat";
 import { getUser } from "@/lib/store";
+import { requireSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -16,11 +17,10 @@ export const runtime = "nodejs";
  * Once we have sessions (planned with v0.4f), this gate becomes session-aware.
  */
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const user = (url.searchParams.get("user") ?? "").trim();
-  if (!user) {
-    return NextResponse.json({ error: "user required" }, { status: 400 });
-  }
+  const auth = await requireSession(req);
+  if (auth.deny) return auth.deny;
+  const user = auth.user;
+
   if (!(await getUser(user))) {
     return NextResponse.json({ error: "no such user" }, { status: 404 });
   }
@@ -40,6 +40,10 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const auth = await requireSession(req);
+  if (auth.deny) return auth.deny;
+  const username = auth.user;
+
   let body: unknown;
   try {
     body = await req.json();
@@ -47,13 +51,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
   const b = (body ?? {}) as Record<string, unknown>;
-  const username = typeof b.username === "string" ? b.username.trim() : "";
   const name = typeof b.name === "string" ? b.name.trim() : "";
   const expiresAt = typeof b.expiresAt === "string" ? b.expiresAt : null;
 
-  if (!username) {
-    return NextResponse.json({ error: "username required" }, { status: 400 });
-  }
   if (!name || name.length > 64) {
     return NextResponse.json(
       { error: "name required (max 64 chars)" },
