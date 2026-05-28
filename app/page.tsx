@@ -242,7 +242,7 @@ export default function HomePage() {
               <Link href="/roadmap">roadmap</Link>
               <Link href="/featured">featured</Link>
               <Link href="/explore">explore</Link>
-              <a href="mailto:support@siphr.dev">support</a>
+              <Link href="/support">support</Link>
               <a href="https://github.com/VisualActions/Siphr" target="_blank" rel="noreferrer">source</a>
             </div>
           </div>
